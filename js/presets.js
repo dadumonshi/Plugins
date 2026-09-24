@@ -5,16 +5,19 @@
  * Типы пресетов / preset kinds:
  *   'eq'      — Movexe EQ 24:  { name, category, plugin:'eq', eq:{ mode, bands:[…] } }
  *   'deesser' — Movexe DeEss:  { name, category, plugin:'deesser', mode, frequency, range, … }
+ *   'lite'    — Movexe EQ Lite: { name, category, plugin:'lite', bands:[{freq,gain}×10], mode, bypass, upsampling }
  *
  * Без PHP (статический хостинг / офлайн PWA) заводские пресеты берутся из
  * presets/index.json и presets/deesser/index.json, а свои хранятся на устройстве.
  */
 import { sanitizeDeEss, DS_ENUMS } from './detection.js';
+import { sanitizeLite, liteToPreset, LITE_MODES } from './api560.js';
+import { LITE_FREQS } from './proportionalq.js';
 
 const LS_KEY = 'proeq.userPresets.v1';
 // Красивый URL (.htaccess) и прямой вызов скрипта / pretty URL and direct script call
 const API_CANDIDATES = ['api/presets', 'php/api.php/presets'];
-const FACTORY_DIR = { eq: 'presets/', deesser: 'presets/deesser/' };
+const FACTORY_DIR = { eq: 'presets/', deesser: 'presets/deesser/', lite: 'presets/lite/' };
 
 function lsRead() {
   try { return JSON.parse(localStorage.getItem(LS_KEY) || '[]'); } catch { return []; }
@@ -23,14 +26,18 @@ function lsWrite(list) {
   try { localStorage.setItem(LS_KEY, JSON.stringify(list)); } catch { /* приватный режим */ }
 }
 
-export const kindOf = (p) => (p && p.plugin === 'deesser' ? 'deesser' : 'eq');
+export const kindOf = (p) => (p && (p.plugin === 'deesser' || p.plugin === 'lite') ? p.plugin : 'eq');
 
 /** Проверка на клиенте (повторяет PHP) / client-side validation (mirrors PHP). */
 export function validatePreset(p) {
   const errors = [];
   if (!p || typeof p !== 'object') return ['пресет должен быть объектом'];
   if (typeof p.name !== 'string' || !p.name.trim() || p.name.length > 64) errors.push('название: от 1 до 64 символов');
-  if (kindOf(p) === 'deesser') {
+  if (kindOf(p) === 'lite') {
+    if (!Array.isArray(p.bands) || !p.bands.length) errors.push('нет списка полос');
+    else if (p.bands.some((b) => !LITE_FREQS.includes(Number(b.freq)) || !Number.isFinite(Number(b.gain)) || Math.abs(b.gain) > 12)) errors.push('полосы: частоты 31…16000 Гц, усиление ±12 дБ');
+    if (p.mode && !LITE_MODES.includes(p.mode)) errors.push('неизвестный режим обработки');
+  } else if (kindOf(p) === 'deesser') {
     if (p.mode && !DS_ENUMS.mode.includes(p.mode)) errors.push('неизвестный режим детекции');
     if (p.channelMode && !DS_ENUMS.channelMode.includes(p.channelMode)) errors.push('неизвестный режим каналов');
     for (const k of ['frequency', 'range', 'threshold']) if (p[k] !== undefined && !Number.isFinite(Number(p[k]))) errors.push(`${k}: нужно число`);
@@ -135,7 +142,7 @@ export class PresetStore {
   exportFile(preset) {
     const { local, factory, id, ...clean } = preset;
     const blob = new Blob([JSON.stringify(clean, null, 2)], { type: 'application/json' });
-    const ext = kindOf(preset) === 'deesser' ? 'deess' : 'eq';
+    const ext = { deesser: 'deess', lite: 'eqlite', eq: 'eq' }[kindOf(preset)];
     downloadBlob(blob, `${(preset.name || 'preset').replace(/[^\w\-а-яё ]+/gi, '_')}.movexe-${ext}.json`);
   }
 
@@ -145,13 +152,18 @@ export class PresetStore {
     let obj;
     try { obj = JSON.parse(text); } catch { throw new Error('Файл не является корректным JSON'); }
     // «Голый» EQ-state или «голые» параметры де-эссера / bare EQ state or bare de-esser params
-    if (Array.isArray(obj.bands)) obj = { name: file.name.replace(/\..*$/, ''), plugin: 'eq', eq: obj };
+    const isLiteBands = Array.isArray(obj.bands) && obj.bands.length && obj.bands.every((b) => LITE_FREQS.includes(Number(b.freq)) && b.type === undefined);
+    if (Array.isArray(obj.bands) && !isLiteBands && !obj.plugin) obj = { name: file.name.replace(/\..*$/, ''), plugin: 'eq', eq: obj };
     if (!obj.plugin && obj.frequency !== undefined && !obj.eq) obj.plugin = 'deesser';
+    // Формат из ТЗ Lite: bands:[{freq,gain}] на частотах 31…16000 / Lite format
+    if (!obj.plugin && Array.isArray(obj.bands) && obj.bands.every((b) => LITE_FREQS.includes(Number(b.freq)))) obj.plugin = 'lite';
     if (!obj.name) obj.name = file.name.replace(/\..*$/, '').slice(0, 64);
     if (expectedKind && kindOf(obj) !== expectedKind) {
-      throw new Error(expectedKind === 'deesser' ? 'Это пресет эквалайзера, а открыт де-эссер' : 'Это пресет де-эссера, а открыт эквалайзер');
+      const names = { eq: 'Movexe EQ 24', deesser: 'Movexe DeEss', lite: 'Movexe EQ Lite' };
+      throw new Error(`Это пресет для ${names[kindOf(obj)]}, а открыт ${names[expectedKind]}`);
     }
     if (kindOf(obj) === 'deesser') obj = { name: obj.name, category: obj.category || 'Custom', plugin: 'deesser', ...sanitizeDeEss(obj) };
+    if (kindOf(obj) === 'lite') obj = { name: obj.name, category: obj.category || 'Custom', plugin: 'lite', ...liteToPreset(sanitizeLite(obj)) };
     const errs = validatePreset(obj);
     if (errs.length) throw new Error(errs.join('; '));
     const { id, factory, ...rest } = obj;

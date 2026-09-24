@@ -2,7 +2,7 @@
  * app.js — точка входа: связывает аудио-движок, цепочку эффектов, запись, графики, жесты и мобильный UI.
  * app.js — entry point: wires the audio engine, FX chain, recorder, graphs, gestures and mobile UI.
  *
- * Эффекты / Effects: Movexe EQ 24 (eq.js), Movexe DeEss (deesser.js).
+ * Эффекты / Effects: Movexe EQ 24 (eq.js), Movexe DeEss (deesser.js), Movexe EQ Lite (api560.js).
  */
 import { AudioEngine, audioSupported, micSupported } from './audio.js';
 import { registerPlugin, listPlugins, getPlugin } from './fx-chain.js';
@@ -13,6 +13,8 @@ import { EQGraph, fmtGain } from './ui.js';
 import { DeEssGraph } from './graph.js';
 import { GraphGestures, DeEssGestures } from './gestures.js';
 import { DeEssPanel } from './deesser-ui.js';
+import { LitePlugin, LITE_MODES } from './api560.js';
+import { LiteGraph, FaderBank, LitePanel } from './api560-ui.js';
 import { haptics } from './touch.js';
 import {
   detectDevice, fullscreen, watchOrientation, Toast, ContextMenu, Drawer, BottomSheet, BandPanel, Knob
@@ -41,7 +43,8 @@ const prefs = Object.assign({
   fftSize: dev.lowPower ? 4096 : 8192,
   range: 12,
   linearQuality: 'medium',
-  tap: 'wet', loop: false
+  tap: 'wet', loop: false,
+  liteScale: 100
 }, loadPrefs());
 
 /* ---------------- тема и классы <html> / theme & root classes ---------------- */
@@ -77,6 +80,19 @@ const dsGraph = new DeEssGraph($('#dsGraphWrap'), {
   history: $('#dsHistory'), grBar: $('#dsGrBar'), led: $('#dsLed'),
   grText: $('#dsGrText'), peakText: $('#dsPeakText'), inMeter: $('#dsIn'), outMeter: $('#dsOut')
 }, { lowPower: prefs.lowPower });
+const liteSheet = new BottomSheet($('#liteSheet'));
+const liteGraph = new LiteGraph($('#liteGraphWrap'), { lowPower: prefs.lowPower });
+const faderBank = new FaderBank($('#liteBank'), { graph: liteGraph });
+/** Масштабируемый интерфейс Lite / scalable Lite GUI */
+function applyLiteScale(v) {
+  prefs.liteScale = v;
+  $('#liteEditor').style.setProperty('--lite-scale', String(v / 100));
+  savePrefs(prefs);
+  requestAnimationFrame(() => liteGraph.resize());
+}
+const litePanel = new LitePanel($('#liteSheet'), liteSheet, { toast, onScale: applyLiteScale });
+litePanel.setScale(prefs.liteScale);
+$('#liteEditor').style.setProperty('--lite-scale', String(prefs.liteScale / 100));
 const presets = new PresetStore();
 
 function fatal(msg) {
@@ -93,6 +109,7 @@ try {
   if (!audioSupported) throw new Error('Этот браузер не поддерживает Web Audio API');
   registerPlugin(ProEQPlugin);
   registerPlugin(DeEsserPlugin);
+  registerPlugin(LitePlugin);
   engine = new AudioEngine({ lowPower: prefs.lowPower, fftSize: prefs.fftSize, maxBands: prefs.maxBands });
   recorder = new Recorder(engine);
   recorder.tapMode = prefs.tap;
@@ -124,16 +141,22 @@ function selectSlot(id) {
   const editor = currentEditor();
   const eqPlugin = editor === 'eq' ? slot.plugin : null;
   const dsPlugin = editor === 'deesser' ? slot.plugin : null;
+  const litePlugin = editor === 'lite' ? slot.plugin : null;
   $('#app').dataset.editor = editor || 'none';
 
   graph.bind(eqPlugin, engine);
   panel.bind(eqPlugin ? eqPlugin.model : null);
   dsGraph.bind(dsPlugin, engine);
   dsPanel.bind(dsPlugin);
+  liteGraph.bind(litePlugin, engine);
+  faderBank.bind(litePlugin);
+  litePanel.bind(litePlugin);
   // Рисуем только видимый график (экономия батареи) / draw only the visible graph
-  if (eqPlugin) { dsGraph.stop(); dsSheet.set('hidden'); graph.start(); requestAnimationFrame(() => graph.resize()); }
-  else { graph.stop(); sheet.set('hidden'); }
-  if (dsPlugin) { dsGraph.start(); requestAnimationFrame(() => dsGraph.resize()); if (!dsSheet.isSheet) dsSheet.set('full'); else dsSheet.set('peek'); }
+  if (eqPlugin) { graph.start(); requestAnimationFrame(() => graph.resize()); } else { graph.stop(); sheet.set('hidden'); }
+  if (dsPlugin) { dsGraph.start(); requestAnimationFrame(() => dsGraph.resize()); dsSheet.set(dsSheet.isSheet ? 'peek' : 'full'); }
+  else { dsGraph.stop(); dsSheet.set('hidden'); }
+  if (litePlugin) { liteGraph.start(); requestAnimationFrame(() => liteGraph.resize()); liteSheet.set(matchMedia('(min-width: 1024px)').matches ? 'full' : 'hidden'); }
+  else { liteGraph.stop(); liteSheet.set('hidden'); }
 
   const m = slot?.plugin.model;
   if (m) {
@@ -146,6 +169,7 @@ function selectSlot(id) {
   }
   $('#app').classList.toggle('no-plugin', !slot);
   syncEqBar();
+  syncLiteBar();
   syncHistory();
   renderFxList();
   scheduleSave();
@@ -158,6 +182,7 @@ function onModelChange(d) {
     toast.show(`Достигнут лимит полос: ${d.max}`, { action: { label: 'Изменить', fn: () => drawer.open() } });
   }
   if (d.kind === 'bands' || d.kind === 'settings' || d.kind === 'params') scheduleSave();
+  if (currentEditor() === 'lite' && (d.kind === 'params' || d.kind === 'ab')) syncLiteBar();
 }
 
 function syncHistory() {
@@ -369,6 +394,42 @@ $('#dsFab').addEventListener('click', (e) => {
   haptics.tick();
 });
 
+/* ---------------- Movexe EQ Lite: панель, FAB / bar & FAB ---------------- */
+function syncLiteBar() {
+  const m = currentModel();
+  if (currentEditor() !== 'lite' || !m) return;
+  const p = m.params;
+  const io = $('#liteInOut');
+  io.textContent = p.bypass ? 'OUT' : 'IN';
+  io.setAttribute('aria-pressed', String(!p.bypass));
+  for (const b of document.querySelectorAll('.lite-ab [data-ab]')) b.classList.toggle('is-on', b.dataset.ab === m.ab.active);
+  for (const b of document.querySelectorAll('.lite-mode [data-mode]')) {
+    b.classList.toggle('is-on', b.dataset.mode === p.mode);
+    b.setAttribute('aria-checked', String(b.dataset.mode === p.mode));
+  }
+}
+document.querySelector('.lite-bar').addEventListener('click', (e) => {
+  const m = currentModel();
+  if (currentEditor() !== 'lite' || !m) return;
+  if (e.target.closest('#liteInOut')) { m.set({ bypass: !m.params.bypass }, { history: false }); haptics.heavy(); }
+  const ab = e.target.closest('[data-ab]');
+  if (ab && ab.dataset.ab !== m.ab.active) { m.switchAB(); haptics.tick(); toast.show(`Слот ${m.ab.active}`, { short: true }); }
+  const md = e.target.closest('[data-mode]');
+  if (md && LITE_MODES.includes(md.dataset.mode)) { m.set({ mode: md.dataset.mode }); haptics.tick(); }
+  // Телефон и планшет: кнопка открывает/закрывает панель; ПК: панель всегда видна
+  if (e.target.closest('#liteSettings')) {
+    const desktop = matchMedia('(min-width: 1024px)').matches;
+    liteSheet.set(liteSheet.state !== 'hidden' && !desktop ? 'hidden' : 'full');
+  }
+});
+$('#liteFab').addEventListener('click', () => {
+  const m = currentModel();
+  if (currentEditor() !== 'lite' || !m) return;
+  m.resetAll();
+  haptics.heavy();
+  toast.show('Все полосы сброшены в 0 дБ', { action: { label: 'Отменить', fn: () => m.undo() } });
+});
+
 /* ---------------- нижняя панель эквалайзера / EQ bar ---------------- */
 const outKnob = new Knob('output', {
   onBegin: () => currentModel()?.begin(),
@@ -450,7 +511,7 @@ document.addEventListener('webkitfullscreenchange', () => root.classList.toggle(
 
 /* ---------------- навигация (мобильные) / navigation (mobile) ---------------- */
 function resizeGraphs() {
-  requestAnimationFrame(() => { graph.resize(); dsGraph.resize(); });
+  requestAnimationFrame(() => { graph.resize(); dsGraph.resize(); liteGraph.resize(); });
 }
 function setView(v) {
   $('#app').dataset.view = v;
@@ -475,6 +536,7 @@ watchOrientation((o) => {
   // Поворот: панель переезжает вниз (портрет) или вбок (альбом) — пересчитать графики
   resizeGraphs();
 });
+liteSheet.addEventListener('state', () => litePanel.render());
 
 /* ---------------- транспорт / transport ---------------- */
 const btnMic = $('#btnMic');
@@ -650,19 +712,22 @@ function uiLoop() {
   if (recorder?.recording) recTime.textContent = fmtDur(recorder.elapsed).padStart(7, '0');
   else if (engine.player) recTime.textContent = fmtDur(engine.playPosition).padStart(7, '0');
   if (currentEditor() === 'deesser') dsPanel.tick();
+  if (currentEditor() === 'lite') faderBank.meters(engine);
 }
 
 /* ---------------- пресеты / presets ---------------- */
 const CAT_LABELS = {
   Custom: 'Свои', User: 'Свои', Vocal: 'Вокал', Voice: 'Голос', Podcast: 'Подкаст', Rap: 'Рэп', Pop: 'Поп', Rock: 'Рок',
-  Mix: 'Сведение', Master: 'Мастеринг', Instrument: 'Инструменты', Repair: 'Реставрация', FX: 'Эффекты'
+  Mix: 'Сведение', Master: 'Мастеринг', Instrument: 'Инструменты', Repair: 'Реставрация', FX: 'Эффекты',
+  Snare: 'Малый барабан', Kick: 'Бочка', Guitar: 'Гитара', Bass: 'Бас', Room: 'Комната'
 };
 const CATEGORIES = {
   eq: ['Custom', 'Vocal', 'Podcast', 'Mix', 'Master', 'Instrument', 'Repair', 'FX'],
-  deesser: ['Custom', 'Vocal', 'Podcast', 'Rap', 'Pop', 'Rock']
+  deesser: ['Custom', 'Vocal', 'Podcast', 'Rap', 'Pop', 'Rock'],
+  lite: ['Custom', 'Vocal', 'Snare', 'Kick', 'Guitar', 'Bass', 'Room']
 };
-/** Тип пресетов для текущего эффекта: 'eq' | 'deesser'. */
-const presetKind = () => (currentEditor() === 'deesser' ? 'deesser' : 'eq');
+/** Тип пресетов для текущего эффекта: 'eq' | 'deesser' | 'lite'. */
+const presetKind = () => ({ deesser: 'deesser', lite: 'lite' }[currentEditor()] || 'eq');
 
 async function refreshPresets() {
   const box = $('#presetList');
@@ -729,7 +794,8 @@ function currentPreset(name, category) {
   const m = currentModel();
   if (!m) return null;
   if (isEq(m)) return { name, author: 'User', category, plugin: 'eq', version: 1, eq: m.toJSON() };
-  return { name, author: 'User', category, plugin: 'deesser', version: 1, ...m.toJSON() };
+  const { ab, ...state } = m.toJSON();
+  return { name, author: 'User', category, plugin: presetKind(), version: 1, ...state };
 }
 
 $('#presetSave').addEventListener('submit', async (e) => {
@@ -791,20 +857,22 @@ bindOpt('#optLinQ', () => prefs.linearQuality, (v) => {
 bindOpt('#optControls', () => prefs.controls, (v) => { prefs.controls = v; panel.setControlStyle(v); dsPanel.setControlStyle(v); });
 bindOpt('#optTheme', () => prefs.theme, (v) => {
   prefs.theme = v; applyTheme();
-  requestAnimationFrame(() => { graph.refreshTheme(); dsGraph.refreshTheme(); });
+  requestAnimationFrame(() => { graph.refreshTheme(); dsGraph.refreshTheme(); liteGraph.refreshTheme(); });
 });
 bindOpt('#optHaptics', () => prefs.haptics, (v) => { prefs.haptics = v; haptics.enabled = v; haptics.select(); });
 bindOpt('#optLowPower', () => prefs.lowPower, (v) => {
   prefs.lowPower = v;
   root.classList.toggle('low-power', v);
-  graph.lowPower = dsGraph.lowPower = v;
+  graph.lowPower = dsGraph.lowPower = liteGraph.lowPower = v;
   resizeGraphs();
 });
+liteSheet.addEventListener('state', () => litePanel.render());
 $('#optHaptics').closest('label').hidden = !dev.vibrate;
 $('#btnResetAll').addEventListener('click', () => {
   const m = currentModel();
   if (!m) return;
   if (isEq(m)) { if (!m.bands.length) return; m.resetAll(); }
+  else if (currentEditor() === 'lite') m.resetAll();
   else { const { audition, bypass, ...rest } = m.params; void audition; void bypass; m.reset(Object.keys(rest)); }
   drawer.close();
   toast.show('Эффект сброшен', { action: { label: 'Отменить', fn: () => m.undo() } });
@@ -822,6 +890,10 @@ document.addEventListener('keydown', (e) => {
   if (mod && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? m.redo() : m.undo(); return; }
   if (mod && e.key.toLowerCase() === 'y') { e.preventDefault(); m.redo(); return; }
   if (e.key === 'Escape') { ctxMenu.hide(); drawer.close(); }
+  if (currentEditor() === 'lite') {
+    if (e.key === 'b' || e.key === 'B') m.set({ bypass: !m.params.bypass }, { history: false });
+    return;
+  }
   if (!isEq(m)) {
     // Де-эссер: B — обход, A — прослушивание / de-esser: B bypass, A audition
     if (e.key === 'b' || e.key === 'B') m.set({ bypass: !m.params.bypass }, { history: false });
@@ -882,4 +954,4 @@ uiLoop();
 if (location.protocol === 'file:') toast.show('Откройте через http(s):// — ES-модули и микрофон не работают с file://');
 
 // Для отладки из консоли / for console debugging
-window.proeq = { engine, graph, dsGraph, recorder, presets, get model() { return currentModel(); } };
+window.proeq = { engine, graph, dsGraph, liteGraph, recorder, presets, get model() { return currentModel(); } };

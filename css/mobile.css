@@ -6,6 +6,8 @@
 /* ============ 320px: самые узкие экраны (iPhone SE 1-го поколения) ============ */
 @media (max-width: 359px) {
   .ds-side { width: 54px; }
+  .lite-meter { display: none; }       /* на 320px вся ширина — фейдерам / all width to faders */
+  .lite-mode button { padding: 0 6px; }
   .ds-quick { padding: 0 7px; font-size: 12px; }
   :root { --touch: 44px; --knob: 80px; --fs: 14px; }
   .topbar { gap: 0; padding-left: 2px; padding-right: 2px; }
@@ -191,6 +193,15 @@
   .sheet-grabber, [data-act="expand"] { display: none; }
   .ctl-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .ds-history { height: 32px; }
+  .lite-wrap { height: 30dvh; min-height: 100px; }
+  /* Lite: фейдерам — вся ширина; настройки выезжают сбоку только по кнопке.
+     Lite: faders get the full width; settings slide in only on demand. */
+  .app[data-editor="lite"][data-view="eq"] .editor { right: 0; }
+  .lite-sheet[data-state="hidden"] { display: none; }
+  .lite-sheet { box-shadow: var(--shadow); z-index: 40; }
+  .lite-bank { min-height: 100px; }
+  .lite-inout { width: 64px; height: 44px; }
+  .lite-bar { padding: 4px 6px; gap: 6px; }
   .ds-head { flex-wrap: wrap; }
   .ctl-value { min-width: 0; font-size: 15px; }
   .band-body { padding-bottom: 12px; gap: 10px; }

@@ -527,3 +527,80 @@ export class DeEssGestures {
     this._wt = setTimeout(() => this.model.commit(), 400);
   }
 }
+
+/* ======================================================================
+ * Независимые пальцы для фейдеров Movexe EQ Lite / Independent pointers for faders
+ *
+ * Каждый палец (pointerId) управляет СВОЕЙ полосой: два пальца — два фейдера сразу.
+ * Each pointer drives ITS OWN band: two fingers move two faders at once.
+ *  • drag вверх/вниз — изменение усиления (относительно, без «прыжка» под палец)
+ *  • double tap / long press (500 мс) — сброс в 0 дБ
+ *  • обновления не чаще раза в кадр (≤ 60 fps)
+ * ====================================================================== */
+export class IndependentPointers {
+  /**
+   * @param {HTMLElement|SVGElement} el
+   * @param {object} h { targetAt(e)→index|-1, start(i,e), move(i,dy,e), end(i,e,moved), doubleTap(i,e), longPress(i,e) }
+   */
+  constructor(el, h) {
+    this.el = el;
+    this.h = h;
+    this.active = new Map(); // pointerId → { i, y0, y, moved, t0, lp }
+    this.lastTap = new Map(); // index → { t }
+    this._raf = 0;
+    el.addEventListener('pointerdown', (e) => this._down(e));
+    el.addEventListener('pointermove', (e) => this._move(e));
+    el.addEventListener('pointerup', (e) => this._up(e));
+    el.addEventListener('pointercancel', (e) => this._up(e, true));
+    // iOS: без выноски и системного меню при удержании / no callout on hold
+    el.addEventListener('contextmenu', (e) => e.preventDefault());
+  }
+
+  _down(e) {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    const i = this.h.targetAt(e);
+    if (i < 0) return;
+    e.preventDefault();
+    try { this.el.setPointerCapture(e.pointerId); } catch { /* noop */ }
+    const rec = { id: e.pointerId, i, y0: e.clientY, y: e.clientY, moved: false, t0: performance.now(), shift: e.shiftKey, type: e.pointerType };
+    rec.lp = setTimeout(() => {
+      if (!rec.moved && this.active.get(e.pointerId) === rec) { rec.consumed = true; this.h.longPress?.(i, e); }
+    }, LONG_PRESS_MS_LOCAL);
+    this.active.set(e.pointerId, rec);
+    this.h.start?.(i, e);
+  }
+
+  _move(e) {
+    const rec = this.active.get(e.pointerId);
+    if (!rec || rec.consumed) return;
+    rec.y = e.clientY;
+    rec.shift = e.shiftKey;
+    rec.ev = e;
+    if (!rec.moved && Math.abs(rec.y - rec.y0) > (e.pointerType === 'mouse' ? 2 : 5)) { rec.moved = true; clearTimeout(rec.lp); }
+    if (!this._raf) this._raf = requestAnimationFrame(() => this._flush());
+  }
+
+  _flush() {
+    this._raf = 0;
+    for (const rec of this.active.values()) {
+      if (rec.moved && !rec.consumed) this.h.move?.(rec.i, rec.y - rec.y0, rec);
+    }
+  }
+
+  _up(e, cancelled = false) {
+    const rec = this.active.get(e.pointerId);
+    if (!rec) return;
+    clearTimeout(rec.lp);
+    this.active.delete(e.pointerId);
+    try { this.el.releasePointerCapture(e.pointerId); } catch { /* noop */ }
+    if (rec.moved && !rec.consumed) { rec.y = e.clientY; this.h.move?.(rec.i, rec.y - rec.y0, rec); }
+    this.h.end?.(rec.i, e, rec.moved || rec.consumed);
+    if (!rec.moved && !rec.consumed && !cancelled) {
+      const now = performance.now();
+      const lt = this.lastTap.get(rec.i);
+      if (lt && now - lt < 320) { this.lastTap.delete(rec.i); this.h.doubleTap?.(rec.i, e); }
+      else this.lastTap.set(rec.i, now);
+    }
+  }
+}
+const LONG_PRESS_MS_LOCAL = 500;

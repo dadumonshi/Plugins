@@ -1,0 +1,55 @@
+{
+  "name": "Бочка — глубокая",
+  "author": "Factory",
+  "category": "Kick",
+  "plugin": "lite",
+  "version": 1,
+  "bands": [
+    {
+      "freq": 31,
+      "gain": 6
+    },
+    {
+      "freq": 63,
+      "gain": 4
+    },
+    {
+      "freq": 125,
+      "gain": 0
+    },
+    {
+      "freq": 250,
+      "gain": -4
+    },
+    {
+      "freq": 500,
+      "gain": -4
+    },
+    {
+      "freq": 1000,
+      "gain": 0
+    },
+    {
+      "freq": 2000,
+      "gain": 0
+    },
+    {
+      "freq": 4000,
+      "gain": 2
+    },
+    {
+      "freq": 8000,
+      "gain": 0
+    },
+    {
+      "freq": 16000,
+      "gain": -4
+    }
+  ],
+  "mode": "stereo",
+  "bypass": false,
+  "upsampling": 4,
+  "analog": true,
+  "autoGain": false,
+  "outputGain": 0
+}

@@ -79,7 +79,11 @@
 .workspace { grid-template-rows: minmax(0, 1fr) auto; }
 .rack { grid-row: 1 / span 2; }
 .editor { grid-column: 2; grid-row: 1; }
-.app .ds-sheet { /* .app — специфичность выше, чем у медиа-правил .sheet ниже */
+.lite-wrap { flex: 1.3 1 0; height: auto; min-height: 180px; }
+.lite-bank { flex: 1 1 0; min-height: calc(220px * var(--lite-scale)); max-height: calc(420px * var(--lite-scale)); }
+.lite-sheet .band-body { display: flex; flex-wrap: wrap; gap: 10px 24px; align-items: center; padding: 6px 14px 12px; }
+.lite-sheet .panel-note { flex-basis: 100%; }
+.app .ds-sheet, .app .lite-sheet { /* .app — специфичность выше, чем у медиа-правил .sheet ниже */
   position: relative;
   grid-column: 2;
   grid-row: 2;
@@ -94,6 +98,7 @@
   border-top: 2px solid var(--ds);
   box-shadow: none;
 }
+.app .lite-sheet { border-top-color: var(--amber); }
 .ds-sheet .band-body { display: block; padding: 6px 14px 12px; }
 .ds-sheet .band-head-row { min-height: 44px; }
 .ds-sheet .ds-modes { margin-bottom: 8px; }
@@ -101,7 +106,8 @@
 .ds-sheet .knob { --knob: 58px; }
 .ds-sheet .ctl-value { min-width: 0; font-size: 14px; }
 .ds-sheet .act-row { margin-top: 8px; }
-.ds-sheet[data-state="hidden"] .band-body, .ds-sheet[data-state="hidden"] .band-head { visibility: visible; }
+.ds-sheet[data-state="hidden"] .band-body, .ds-sheet[data-state="hidden"] .band-head,
+.lite-sheet[data-state="hidden"] .band-body, .lite-sheet[data-state="hidden"] .band-head { visibility: visible; }
 .ds-history { height: 56px; }
 
 /* Пресеты — выезжающая справа панель / presets as a right slide-over */

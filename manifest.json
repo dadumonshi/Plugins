@@ -1,7 +1,7 @@
 {
   "name": "Movexe — запись и эффекты",
   "short_name": "Movexe",
-  "description": "Запись с микрофона и цепочка эффектов: эквалайзер Movexe EQ 24 и де-эссер Movexe DeEss",
+  "description": "Запись с микрофона и цепочка эффектов: Movexe EQ 24, Movexe DeEss, Movexe EQ Lite",
   "lang": "ru",
   "id": "./",
   "start_url": "./index.html",

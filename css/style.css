@@ -52,6 +52,9 @@
   /* Movexe DeEss */
   --ds: #00b4d8;             /* акцент графика де-эссера / de-esser accent */
   --gr: #ff6b35;             /* индикатор подавления / gain reduction */
+
+  /* Movexe EQ Lite */
+  --amber: #ffae00;          /* янтарный, как LED на API 560 / amber like the 560's LEDs */
   color-scheme: dark;
   /* Фон <html>: виден при «резиновой» прокрутке iOS и повороте — без него мелькает белый.
      <html> background shows during iOS rubber-band and rotation — without it white flashes. */
@@ -924,18 +927,22 @@ svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; 
 }
 
 /* ================= Переключение редакторов / Editor switching ================= */
-.eq-editor, .ds-editor {
+.eq-editor, .ds-editor, .lite-editor {
   flex: 1 1 auto;
   min-height: 0;
   display: flex;
   flex-direction: column;
 }
 .app[data-editor="deesser"] .eq-editor,
-.app:not([data-editor="deesser"]) .ds-editor { display: none; }
+.app[data-editor="lite"] .eq-editor,
+.app:not([data-editor="deesser"]) .ds-editor,
+.app:not([data-editor="lite"]) .lite-editor { display: none; }
 .app:not([data-editor="eq"]) .eq-sheet,
-.app:not([data-editor="deesser"]) .ds-sheet { display: none; }
-.app[data-editor="deesser"] .help-eq,
-.app:not([data-editor="deesser"]) .help-ds { display: none; }
+.app:not([data-editor="deesser"]) .ds-sheet,
+.app:not([data-editor="lite"]) .lite-sheet { display: none; }
+.app:not([data-editor="eq"]) .help-eq,
+.app:not([data-editor="deesser"]) .help-ds,
+.app:not([data-editor="lite"]) .help-lite { display: none; }
 
 /* ================= Movexe DeEss ================= */
 .ds-stage { flex: 1 1 auto; min-height: 0; display: flex; }
@@ -1001,3 +1008,185 @@ svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; 
 .ctl.is-selected .ctl-label { color: var(--ds); font-weight: 700; }
 .ctl.is-selected .knob-face { stroke: var(--ds); stroke-width: 2.5; }
 .act-row .tgl.is-on { box-shadow: inset 0 0 0 1.5px var(--ds); color: var(--text); }
+
+/* ================= Movexe EQ Lite ================= */
+.lite-editor { --lite-scale: 1; overflow: hidden; }
+.lite-bar::-webkit-scrollbar { display: none; }
+.lite-bar > * { flex: none; }
+.lite-wrap {
+  flex: 0 1 auto;          /* может ужаться, чтобы фейдеры и панель всегда помещались */
+  height: 40dvh;           /* график 40–50dvh на телефоне / graph 40–50dvh on phones */
+  min-height: 150px;
+}
+.lite-taps { cursor: ns-resize; }
+.lite-col { fill: transparent; stroke: none; } /* без обводки от общего правила svg / no inherited stroke */
+.lite-wrap.is-bypassed .lite-main { opacity: 0.5; }
+
+.lite-bank {
+  flex: 1 1 0;
+  min-height: calc(110px * var(--lite-scale));
+  display: flex;
+  gap: 4px;
+  padding: 6px max(4px, var(--sal)) 4px max(4px, var(--sar));
+  background: var(--bg);
+  border-top: 1px solid var(--line);
+  /* Хаки для пальца: без скролла, выделения, выноски iOS и подсветки тапа.
+     Finger hacks: no scroll, selection, iOS callout or tap highlight. */
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+.lite-meter { flex: none; width: 10px; }
+.faders {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(10, minmax(0, 1fr));
+  gap: clamp(1px, 0.6vw, 10px);
+  touch-action: none;
+}
+.fader {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  touch-action: none;       /* вся колонка — зона захвата / the whole column is the hit area */
+  cursor: ns-resize;
+  border-radius: 8px;
+  outline: none;
+  --pos: 0.5;
+}
+.fader:focus-visible { box-shadow: inset 0 0 0 2px var(--amber); }
+.fader.is-selected { background: rgba(255, 174, 0, 0.06); }
+.fader-val {
+  font-size: clamp(11px, 3.2vw, 15px);
+  font-weight: 700;
+  color: var(--muted);
+  white-space: nowrap;
+  min-height: 18px;
+}
+.fader.is-boost .fader-val, .fader.is-cut .fader-val { color: var(--amber); }
+.fader-label { font-size: clamp(11px, 3vw, 14px); color: var(--text); font-weight: 700; }
+.fader-track {
+  position: relative;
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 40px;
+  /* Поля = половина ручки: в крайних положениях она не закрывает значение и подпись.
+     Margins = half a cap, so at the extremes it never covers the value or the label. */
+  margin: calc(15px * var(--lite-scale)) 0;
+}
+.fader-track::before { /* паз / groove */
+  content: "";
+  position: absolute;
+  left: 50%; top: 6px; bottom: 6px;
+  width: 4px;
+  transform: translateX(-50%);
+  border-radius: 2px;
+  background: #0b0b0b;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+.fader-scale i {
+  position: absolute;
+  left: 18%; right: 18%;
+  height: 1px;
+  background: var(--grid-major);
+}
+.fader-scale i.z { background: var(--grid-zero); left: 8%; right: 8%; }
+.fader-fill {
+  position: absolute;
+  left: 50%;
+  width: 4px;
+  transform: translateX(-50%);
+  border-radius: 2px;
+  background: var(--amber);
+  bottom: calc(min(var(--pos), 0.5) * 100%);
+  height: calc(max(var(--pos) - 0.5, 0.5 - var(--pos)) * 100%);
+  box-shadow: 0 0 6px rgba(255, 174, 0, 0.6);
+}
+.fader-cap {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--pos) * 100%);
+  width: min(100%, calc(40px * var(--lite-scale)));
+  height: calc(30px * var(--lite-scale));
+  transform: translate(-50%, 50%);
+  border-radius: 6px;
+  background: linear-gradient(180deg, #5a5a5a 0%, #3a3a3a 45%, #2a2a2a 55%, #4a4a4a 100%);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  transition: transform 0.15s ease, box-shadow 0.2s ease;
+  display: grid;
+  place-items: center;
+}
+.fader-cap span { width: 70%; height: 2px; background: var(--amber); border-radius: 1px; }
+/* Касание: ручка увеличивается и светится / touch: cap grows and glows */
+.fader.is-active .fader-cap {
+  transform: translate(-50%, 50%) scale(1.15);
+  box-shadow: 0 0 14px rgba(255, 174, 0, 0.75), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+.fader.is-reset .fader-cap { animation: fader-reset 0.25s ease; }
+@keyframes fader-reset { 50% { box-shadow: 0 0 18px #fff; } }
+
+.lite-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  /* Одна строка с прокруткой внутри панели — страница не скроллится по горизонтали.
+     One scrollable row inside the bar — the page never scrolls horizontally. */
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+  gap: 8px;
+  padding: 6px 8px;
+  background: var(--bg);
+  border-top: 1px solid var(--line);
+}
+/* Большая кнопка IN/OUT (≥ 60px) / big IN/OUT button */
+.lite-inout {
+  width: 68px; height: 52px;
+  flex: none;
+  border-radius: 14px;
+  font: 800 18px var(--mono);
+  color: #1a1200;
+  background: var(--amber);
+  box-shadow: 0 0 16px rgba(255, 174, 0, 0.45);
+  transition: background 0.2s ease, box-shadow 0.2s ease;
+}
+.lite-inout[aria-pressed="false"] { background: var(--bg3); color: var(--muted); box-shadow: none; }
+.lite-ab button { min-width: 44px; font-weight: 800; }
+.lite-ab button.is-on { color: var(--amber); box-shadow: inset 0 0 0 1px var(--amber); }
+.lite-mode button.is-on { box-shadow: inset 0 0 0 1px var(--amber); }
+.lite-fab { background: var(--amber); color: #1a1200; bottom: 14px; }
+.lite-sheet { border-top-color: var(--amber); --band: var(--amber); }
+.lite-out-row { align-items: center; }
+.lite-out .ctl { --knob: 72px; }
+
+/* Лупа фейдера — над пальцем, поверх всего / fader loupe above the finger */
+.lite-loupe {
+  position: fixed;
+  top: 0; left: 0;
+  z-index: 90;
+  width: 240px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.12s;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 174, 0, 0.6);
+  box-shadow: var(--shadow);
+}
+.lite-loupe.is-on { opacity: 1; }
+.lite-loupe canvas { width: 240px; height: 110px; display: block; }
+.lite-loupe-text { background: #0d0d0d; color: #fff; font-size: 14px; font-weight: 700; text-align: center; padding: 5px 4px; }
+.low-power .lite-inout, .low-power .fader-fill, .low-power .fader.is-active .fader-cap { box-shadow: none; }
+
+/* Невысокие экраны в портрете: график поменьше, чтобы фейдерам хватило хода.
+   Short portrait screens: smaller graph so the faders keep enough travel. */
+@media (orientation: portrait) and (max-height: 720px) {
+  .lite-wrap { height: 30dvh; min-height: 120px; }
+}

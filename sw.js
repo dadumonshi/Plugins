@@ -8,7 +8,7 @@
  *   • /api/* — только сеть (при офлайне клиент сам уходит в localStorage).
  *     /api/* — network only (the client falls back to localStorage when offline).
  */
-const VERSION = 'movexe-v2.0.0';
+const VERSION = 'movexe-v3.0.0';
 const SHELL = [
   './',
   'index.html',
@@ -17,6 +17,8 @@ const SHELL = [
   'css/mobile.css',
   'css/reset.css',
   'css/style.css',
+  'js/api560-ui.js',
+  'js/api560.js',
   'js/app.js',
   'js/audio.js',
   'js/deesser-ui.js',
@@ -30,6 +32,7 @@ const SHELL = [
   'js/graph.js',
   'js/mobile-ui.js',
   'js/presets.js',
+  'js/proportionalq.js',
   'js/recorder.js',
   'js/spectrum.js',
   'js/touch.js',
@@ -61,7 +64,18 @@ const SHELL = [
   'presets/deesser/rock-vocal.json',
   'presets/deesser/vocal-bright.json',
   'presets/deesser/vocal-female.json',
-  'presets/deesser/vocal-male.json'
+  'presets/deesser/vocal-male.json',
+  'presets/lite/bass-growl.json',
+  'presets/lite/guitar-bright.json',
+  'presets/lite/guitar-warm.json',
+  'presets/lite/index.json',
+  'presets/lite/kick-deep.json',
+  'presets/lite/kick-punch.json',
+  'presets/lite/room-tame.json',
+  'presets/lite/snare-crack.json',
+  'presets/lite/snare-fat.json',
+  'presets/lite/vocal-air.json',
+  'presets/lite/vocal-presence.json'
 ];
 
 self.addEventListener('install', (e) => {

@@ -1,0 +1,74 @@
+{
+  "presets": [
+    {
+      "id": "vocal-presence",
+      "name": "Присутствие вокала",
+      "author": "Factory",
+      "category": "Vocal",
+      "plugin": "lite"
+    },
+    {
+      "id": "vocal-air",
+      "name": "Вокал — воздух",
+      "author": "Factory",
+      "category": "Vocal",
+      "plugin": "lite"
+    },
+    {
+      "id": "snare-crack",
+      "name": "Малый — щелчок",
+      "author": "Factory",
+      "category": "Snare",
+      "plugin": "lite"
+    },
+    {
+      "id": "snare-fat",
+      "name": "Малый — плотный",
+      "author": "Factory",
+      "category": "Snare",
+      "plugin": "lite"
+    },
+    {
+      "id": "kick-punch",
+      "name": "Бочка — удар",
+      "author": "Factory",
+      "category": "Kick",
+      "plugin": "lite"
+    },
+    {
+      "id": "kick-deep",
+      "name": "Бочка — глубокая",
+      "author": "Factory",
+      "category": "Kick",
+      "plugin": "lite"
+    },
+    {
+      "id": "guitar-bright",
+      "name": "Гитара — яркая",
+      "author": "Factory",
+      "category": "Guitar",
+      "plugin": "lite"
+    },
+    {
+      "id": "guitar-warm",
+      "name": "Гитара — тёплая",
+      "author": "Factory",
+      "category": "Guitar",
+      "plugin": "lite"
+    },
+    {
+      "id": "bass-growl",
+      "name": "Бас — рычание",
+      "author": "Factory",
+      "category": "Bass",
+      "plugin": "lite"
+    },
+    {
+      "id": "room-tame",
+      "name": "Комната — убрать гул",
+      "author": "Factory",
+      "category": "Room",
+      "plugin": "lite"
+    }
+  ]
+}

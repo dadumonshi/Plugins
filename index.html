@@ -177,6 +177,31 @@
         </div>
         <canvas class="ds-history" id="dsHistory" aria-hidden="true"></canvas>
       </div>
+
+      <!-- Movexe EQ Lite -->
+      <div class="lite-editor" id="liteEditor">
+        <div class="graph-wrap lite-wrap" id="liteGraphWrap">
+          <button class="fab lite-fab" id="liteFab" aria-label="Сбросить все полосы" title="Сбросить все полосы">
+            <svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 2.5-5.8M4 4v5h5"/></svg>
+          </button>
+        </div>
+        <!-- touch-action:none на банке — вертикальный drag не прокручивает страницу -->
+        <div class="lite-bank" id="liteBank"></div>
+        <div class="lite-bar">
+          <button type="button" class="lite-inout" id="liteInOut" aria-pressed="true" title="Вход/выход эффекта (обход)">IN</button>
+          <div class="seg lite-ab" role="group" aria-label="Сравнение A/B">
+            <button type="button" data-ab="A">A</button>
+            <button type="button" data-ab="B">B</button>
+          </div>
+          <div class="seg lite-mode" role="radiogroup" aria-label="Режим обработки">
+            <button type="button" role="radio" data-mode="stereo">Стерео</button>
+            <button type="button" role="radio" data-mode="mono">Моно</button>
+            <button type="button" role="radio" data-mode="mid">Mid</button>
+            <button type="button" role="radio" data-mode="side">Side</button>
+          </div>
+          <button type="button" class="tgl" id="liteSettings">Настройки</button>
+        </div>
+      </div>
     </section>
 
     <!-- ============ Панель полосы эквалайзера (bottom sheet) ============ -->
@@ -187,6 +212,12 @@
 
     <!-- ============ Панель де-эссера (bottom sheet) ============ -->
     <section class="sheet ds-sheet" id="dsSheet" data-state="hidden" aria-label="Параметры де-эссера" aria-hidden="true">
+      <div class="band-head"></div>
+      <div class="band-body"></div>
+    </section>
+
+    <!-- ============ Настройки Movexe EQ Lite (bottom sheet) ============ -->
+    <section class="sheet lite-sheet" id="liteSheet" data-state="hidden" aria-label="Настройки эквалайзера Lite" aria-hidden="true">
       <div class="band-head"></div>
       <div class="band-body"></div>
     </section>
@@ -292,6 +323,16 @@
           <li><b>Долгое нажатие</b>: узел — сброс частоты и порога; пусто — сброс выбранного параметра</li>
           <li><b>Двойное касание</b> — обход вкл/выкл</li>
           <li><b>Касание</b> — выбрать параметр и открыть панель</li>
+        </ul>
+      </fieldset>
+      <fieldset class="help-lite">
+        <legend>Жесты Movexe EQ Lite</legend>
+        <ul class="help-list">
+          <li><b>1 палец</b> на фейдере или колонке графика — усиление полосы</li>
+          <li><b>2 пальца</b> — два фейдера одновременно</li>
+          <li><b>Двойное касание</b> или <b>долгое нажатие</b> — сброс полосы в 0 дБ</li>
+          <li><b>Shift</b> — точная подстройка; стрелки ↑↓ на фейдере; 0 — сброс</li>
+          <li>Половина хода фейдера — зона ±4 дБ (повышенная точность), в 0 дБ — фиксация</li>
         </ul>
       </fieldset>
       <fieldset>

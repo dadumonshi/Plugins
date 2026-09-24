@@ -156,10 +156,63 @@ final class DeEssValidator
     }
 }
 
+/**
+ * Валидатор пресетов Movexe EQ Lite (графический EQ в духе API 560).
+ * Movexe EQ Lite preset validator. Формат / format:
+ * { name, category, plugin:"lite", bands:[{freq:31,gain:0}, … ×10], mode, bypass, upsampling, analog, autoGain, outputGain }
+ */
+final class LiteValidator
+{
+    public const FREQS = [31, 63, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
+    public const CATEGORIES = ['Vocal', 'Snare', 'Kick', 'Guitar', 'Bass', 'Room', 'Custom'];
+    public const MODES = ['stereo', 'mono', 'mid', 'side'];
+    public const UPSAMPLING = [1, 2, 4, 8];
+
+    public static function clean(array $in): array
+    {
+        $errors = [];
+        $name = isset($in['name']) && is_string($in['name']) ? trim($in['name']) : '';
+        if ($name === '' || mb_strlen($name) > 64) { $errors[] = 'name: required, 1–64 chars'; }
+        $gains = array_fill(0, 10, 0.0);
+        if (!isset($in['bands']) || !is_array($in['bands']) || count($in['bands']) > 10) {
+            $errors[] = 'bands: array of up to 10 {freq, gain}';
+        } else {
+            foreach (array_values($in['bands']) as $k => $b) {
+                $i = is_array($b) ? array_search((int)($b['freq'] ?? 0), self::FREQS, true) : false;
+                $g = is_array($b) ? ($b['gain'] ?? null) : null;
+                if ($i === false) { $errors[] = "bands[$k].freq: one of " . implode(',', self::FREQS); continue; }
+                if (!is_numeric($g) || abs((float)$g) > 12) { $errors[] = "bands[$k].gain: number in [-12, 12]"; continue; }
+                $gains[$i] = round((float)$g, 2);
+            }
+        }
+        $mode = $in['mode'] ?? 'stereo';
+        if (!in_array($mode, self::MODES, true)) { $errors[] = 'mode: stereo|mono|mid|side'; }
+        $up = (int)($in['upsampling'] ?? 4);
+        if (!in_array($up, self::UPSAMPLING, true)) { $errors[] = 'upsampling: 1|2|4|8'; }
+        $out = $in['outputGain'] ?? 0;
+        if (!is_numeric($out) || abs((float)$out) > 18) { $errors[] = 'outputGain: number in [-18, 18]'; }
+        if ($errors) { throw new ValidationException(implode('; ', $errors)); }
+        $cat = in_array($in['category'] ?? '', self::CATEGORIES, true) ? $in['category'] : 'Custom';
+        return [
+            'name' => $name,
+            'author' => mb_substr(trim(strip_tags((string)($in['author'] ?? 'User'))), 0, 40),
+            'category' => $cat, 'plugin' => 'lite', 'version' => 1,
+            'bands' => array_map(fn($f, $g) => ['freq' => $f, 'gain' => $g], self::FREQS, $gains),
+            'mode' => $mode,
+            'bypass' => (bool)($in['bypass'] ?? false),
+            'upsampling' => $up,
+            'analog' => (bool)($in['analog'] ?? true),
+            'autoGain' => (bool)($in['autoGain'] ?? false),
+            'outputGain' => round((float)$out, 2),
+        ];
+    }
+}
+
 /** Тип пресета по содержимому / preset kind by content. */
 function preset_kind(array $p): string
 {
-    return ($p['plugin'] ?? '') === 'deesser' ? 'deesser' : 'eq';
+    $k = $p['plugin'] ?? '';
+    return in_array($k, ['deesser', 'lite'], true) ? $k : 'eq';
 }
 
 final class PresetStorage
@@ -172,7 +225,7 @@ final class PresetStorage
     public function __construct(string $root)
     {
         $this->factoryDir = rtrim($root, '/');
-        $this->factoryDirs = ['eq' => $this->factoryDir, 'deesser' => $this->factoryDir . '/deesser'];
+        $this->factoryDirs = ['eq' => $this->factoryDir, 'deesser' => $this->factoryDir . '/deesser', 'lite' => $this->factoryDir . '/lite'];
         $this->userDir = $this->factoryDir . '/user';
         if (!is_dir($this->userDir) && !@mkdir($this->userDir, 0775, true) && !is_dir($this->userDir)) {
             throw new RuntimeException('Cannot create user preset directory');
@@ -225,7 +278,7 @@ final class PresetStorage
             'category' => $p['category'] ?? '',
             'factory' => (bool)($p['factory'] ?? false),
             'plugin' => preset_kind($p),
-            'bands' => isset($p['eq']['bands']) ? count($p['eq']['bands']) : 0,
+            'bands' => isset($p['eq']['bands']) ? count($p['eq']['bands']) : (isset($p['bands']) && is_array($p['bands']) ? count($p['bands']) : 0),
             'updated' => $p['updated'] ?? null,
         ];
     }
@@ -233,12 +286,12 @@ final class PresetStorage
     /** Список (только метаданные) для типа / list (metadata only) for a kind. */
     public function all(string $kind = 'eq'): array
     {
-        $kind = $kind === 'deesser' ? 'deesser' : 'eq';
+        $kind = in_array($kind, ['deesser', 'lite'], true) ? $kind : 'eq';
         $out = [];
         foreach (glob($this->factoryDirs[$kind] . '/*.json') ?: [] as $f) {
             if (basename($f) === 'index.json') { continue; }
             $p = $this->read($f);
-            if ($p) { $p['id'] = basename($f, '.json'); $p['factory'] = true; if ($kind === 'deesser') { $p['plugin'] = 'deesser'; } $out[] = $this->meta($p); }
+            if ($p) { $p['id'] = basename($f, '.json'); $p['factory'] = true; if ($kind !== 'eq') { $p['plugin'] = $kind; } $out[] = $this->meta($p); }
         }
         foreach (glob($this->userDir . '/*.json') ?: [] as $f) {
             $p = $this->read($f);
@@ -251,7 +304,7 @@ final class PresetStorage
     public function get(string $id): array
     {
         if (!self::validId($id) || $id === 'index') { throw new NotFoundException('Preset not found'); }
-        $dirs = [[$this->userDir, false, null], [$this->factoryDirs['eq'], true, 'eq'], [$this->factoryDirs['deesser'], true, 'deesser']];
+        $dirs = [[$this->userDir, false, null], [$this->factoryDirs['eq'], true, 'eq'], [$this->factoryDirs['deesser'], true, 'deesser'], [$this->factoryDirs['lite'], true, 'lite']];
         foreach ($dirs as [$dir, $factory, $kind]) {
             $f = "$dir/$id.json";
             if (is_file($f)) {
@@ -259,7 +312,7 @@ final class PresetStorage
                 if ($p) {
                     $p['id'] = $id;
                     $p['factory'] = $factory;
-                    if ($kind === 'deesser') { $p['plugin'] = 'deesser'; }
+                    if ($kind && $kind !== 'eq') { $p['plugin'] = $kind; }
                     return $p;
                 }
             }
@@ -270,7 +323,11 @@ final class PresetStorage
     /** Валидация по типу / validation by kind. */
     private static function validate(array $input): array
     {
-        return preset_kind($input) === 'deesser' ? DeEssValidator::clean($input) : PresetValidator::clean($input);
+        switch (preset_kind($input)) {
+            case 'deesser': return DeEssValidator::clean($input);
+            case 'lite': return LiteValidator::clean($input);
+            default: return PresetValidator::clean($input);
+        }
     }
 
     public function create(array $input): array
