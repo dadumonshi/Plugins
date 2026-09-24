@@ -1,0 +1,50 @@
+{
+  "name": "Vocal Presence",
+  "author": "Factory",
+  "category": "Vocal",
+  "version": 1,
+  "factory": true,
+  "eq": {
+    "mode": "zero",
+    "autoGain": false,
+    "outputGain": 0,
+    "bands": [
+      {
+        "type": "lowcut",
+        "freq": 90,
+        "gain": 0,
+        "q": 0.71,
+        "slope": 24,
+        "placement": "stereo",
+        "enabled": true
+      },
+      {
+        "type": "bell",
+        "freq": 300,
+        "gain": -2.5,
+        "q": 1.2,
+        "slope": 12,
+        "placement": "stereo",
+        "enabled": true
+      },
+      {
+        "type": "bell",
+        "freq": 3200,
+        "gain": 3,
+        "q": 0.9,
+        "slope": 12,
+        "placement": "stereo",
+        "enabled": true
+      },
+      {
+        "type": "highshelf",
+        "freq": 10000,
+        "gain": 2.5,
+        "q": 0.71,
+        "slope": 12,
+        "placement": "stereo",
+        "enabled": true
+      }
+    ]
+  }
+}

@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <!-- viewport-fit=cover — рисуем под «чёлкой», отступы даёт env(safe-area-inset-*).
+       user-scalable=no + maximum-scale=1 — страница не зумится при жестах на графике.
+       viewport-fit=cover draws under the notch; env(safe-area-inset-*) supplies insets.
+       user-scalable=no + maximum-scale=1 keep the page from zooming during graph gestures. -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, maximum-scale=1">
+  <meta name="theme-color" content="#1a1a1a">
+  <meta name="color-scheme" content="dark light">
+  <!-- iOS: запуск с домашнего экрана без UI Safari / iOS: standalone launch from home screen -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Pro EQ">
+  <!-- iOS: не превращать числа (частоты) в телефонные ссылки / don't linkify numbers -->
+  <meta name="format-detection" content="telephone=no">
+  <meta name="description" content="Запись с микрофона и FX-цепочка с параметрическим эквалайзером в стиле Pro-Q 3. Mic recorder with a Pro-Q 3-style parametric EQ.">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" type="image/png" sizes="32x32" href="icons/icon-32.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <title>Pro EQ — Recorder &amp; FX</title>
+  <link rel="stylesheet" href="css/reset.css">
+  <link rel="stylesheet" href="css/style.css">
+  <!-- Mobile-first: базовые стили в style.css; mobile.css — уточнения для touch/узких, desktop.css — ≥1024px -->
+  <link rel="stylesheet" href="css/mobile.css">
+  <link rel="stylesheet" href="css/desktop.css" media="(min-width: 1024px)">
+  <script type="module" src="js/app.js"></script>
+</head>
+<body>
+<div class="app" id="app" data-view="eq">
+
+  <!-- ============ Верхняя панель / Top bar ============ -->
+  <header class="topbar">
+    <button class="icon-btn" id="btnMenu" aria-label="Меню / Menu" aria-controls="drawer">
+      <svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+    </button>
+    <div class="brand" aria-hidden="true">
+      <svg viewBox="0 0 32 32"><path d="M3 20 C9 20 10 8 16 8 S23 24 29 14" /></svg>
+      <span>Pro EQ</span>
+    </div>
+    <button class="preset-btn" id="btnPresets" aria-label="Пресеты / Presets">
+      <span class="preset-name" id="presetName">Default</span>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10l5 5 5-5"/></svg>
+    </button>
+    <div class="top-actions">
+      <button class="icon-btn" id="btnUndo" aria-label="Отменить / Undo" disabled>
+        <svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3"/></svg>
+      </button>
+      <button class="icon-btn" id="btnRedo" aria-label="Повторить / Redo" disabled>
+        <svg viewBox="0 0 24 24"><path d="M15 14l5-5-5-5M20 9H10a6 6 0 0 0 0 12h3"/></svg>
+      </button>
+      <button class="icon-btn" id="btnFullscreen" aria-label="Полный экран / Fullscreen" hidden>
+        <svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- ============ Транспорт и запись / Transport & recording ============ -->
+  <section class="transport" aria-label="Источник и запись / Source and recording">
+    <button class="tbtn" id="btnMic" aria-pressed="false">
+      <svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+      <span>Mic</span>
+    </button>
+    <select class="input-sel" id="selInput" aria-label="Вход / Input device" hidden></select>
+    <button class="rec-btn" id="btnRec" aria-label="Запись / Record" aria-pressed="false"><i></i></button>
+    <div class="rec-time mono" id="recTime" aria-live="off">00:00.0</div>
+    <button class="tbtn" id="btnStop" aria-label="Стоп воспроизведения / Stop playback" hidden>
+      <svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1.5"/></svg>
+    </button>
+    <button class="tbtn" id="btnMonitor" aria-pressed="false" aria-label="Мониторинг / Monitoring">
+      <svg viewBox="0 0 24 24"><path d="M4 15v-3a8 8 0 0 1 16 0v3"/><rect x="3" y="14" width="4" height="7" rx="1.5"/><rect x="17" y="14" width="4" height="7" rx="1.5"/></svg>
+      <span>Monitor</span>
+    </button>
+    <div class="meters" aria-hidden="true">
+      <div class="meter" id="meterIn"><i></i><b>IN</b></div>
+      <div class="meter" id="meterOut"><i></i><b>OUT</b></div>
+    </div>
+  </section>
+
+  <main class="workspace">
+    <!-- ============ Рэк: FX-цепочка и дубли / Rack: FX chain and takes ============ -->
+    <aside class="rack" id="rack">
+      <section class="panel fx-panel" aria-labelledby="fxTitle">
+        <header class="panel-head">
+          <h2 id="fxTitle">FX Chain</h2>
+          <button class="chip-btn is-accent" id="btnAddFx">+ FX</button>
+        </header>
+        <ol class="fx-list" id="fxList"></ol>
+        <p class="panel-note">Сигнал: Вход → FX 1 → FX 2 → … → Выход. Signal flows top to bottom.</p>
+      </section>
+      <section class="panel takes-panel" aria-labelledby="takesTitle">
+        <header class="panel-head">
+          <h2 id="takesTitle">Записи · Takes</h2>
+          <label class="chip-btn" for="fileImport">Import</label>
+          <input type="file" id="fileImport" accept="audio/*" hidden>
+        </header>
+        <div class="rec-opts">
+          <label>Записывать / Record:
+            <select id="selTap">
+              <option value="wet">Wet — после FX</option>
+              <option value="dry">Dry — без FX</option>
+            </select>
+          </label>
+          <label class="check"><input type="checkbox" id="chkLoop"> Loop</label>
+        </div>
+        <ul class="take-list" id="takeList"></ul>
+      </section>
+    </aside>
+
+    <!-- ============ Редактор плагина / Plugin editor ============ -->
+    <section class="editor" id="editor" aria-label="Эквалайзер / Equalizer">
+      <div class="editor-head">
+        <div class="fx-tabs" id="fxTabs" role="tablist"></div>
+      </div>
+      <!-- touch-action:none задан в CSS — жесты не скроллят и не зумят страницу -->
+      <div class="graph-wrap" id="graphWrap">
+        <button class="zoom-reset" id="btnZoomReset" hidden>Zoom 1:1</button>
+        <button class="fab" id="fab" aria-label="Добавить полосу / Add band">
+          <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+        </button>
+      </div>
+      <div class="eq-bar" id="eqBar">
+        <div class="seg seg-mode" role="radiogroup" aria-label="Режим обработки / Processing mode">
+          <button type="button" data-mode="zero" role="radio">Zero Lat.</button>
+          <button type="button" data-mode="natural" role="radio">Natural</button>
+          <button type="button" data-mode="linear" role="radio">Linear</button>
+        </div>
+        <button type="button" class="tgl" id="tglAnalyzer" aria-pressed="true">Analyzer</button>
+        <button type="button" class="tgl" id="tglGrab" aria-pressed="true">Grab</button>
+        <button type="button" class="tgl" id="tglAuto" aria-pressed="false">Auto Gain</button>
+        <label class="range-sel">
+          <span>±dB</span>
+          <select id="selRange" aria-label="Диапазон / Display range">
+            <option value="3">3</option><option value="6">6</option><option value="12" selected>12</option><option value="30">30</option>
+          </select>
+        </label>
+        <div class="out-knob" id="outKnob"></div>
+        <button type="button" class="tgl tgl-bypass" id="tglBypass" aria-pressed="false">Bypass</button>
+      </div>
+    </section>
+
+    <!-- ============ Bottom sheet параметров полосы / Band parameter sheet ============ -->
+    <section class="sheet" id="sheet" data-state="hidden" aria-label="Параметры полосы / Band parameters" aria-hidden="true">
+      <div class="band-head"></div>
+      <div class="band-body"></div>
+    </section>
+
+    <!-- ============ Пресеты / Presets ============ -->
+    <section class="presets-view" id="presetsView" aria-labelledby="presetsTitle">
+      <header class="panel-head">
+        <h2 id="presetsTitle">Пресеты · Presets</h2>
+        <span class="srv-status" id="srvStatus"></span>
+        <button class="icon-btn" id="btnPresetsClose" aria-label="Закрыть / Close">
+          <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </header>
+      <form class="preset-save" id="presetSave">
+        <input type="text" id="presetNameInput" maxlength="64" placeholder="Имя пресета / Preset name" enterkeyhint="done" required>
+        <button type="submit" class="chip-btn is-accent">Save</button>
+        <button type="button" class="chip-btn" id="btnExportCur">Export</button>
+        <label class="chip-btn" for="presetImport">Import</label>
+        <input type="file" id="presetImport" accept=".json,application/json" hidden>
+      </form>
+      <div class="preset-list" id="presetList"></div>
+    </section>
+  </main>
+
+  <!-- ============ Нижняя навигация (мобильные) / Bottom navigation (mobile) ============ -->
+  <nav class="bottom-nav" aria-label="Разделы / Sections">
+    <button data-view="eq" aria-current="page"><svg viewBox="0 0 24 24"><path d="M3 15c4 0 4-8 8-8s5 11 10 5"/></svg><span>EQ</span></button>
+    <button data-view="fx"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="5" rx="1"/><rect x="4" y="11" width="16" height="5" rx="1"/><path d="M8 19h8"/></svg><span>FX</span></button>
+    <button data-view="rec"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="3" class="fill"/></svg><span>Takes</span></button>
+    <button data-view="presets"><svg viewBox="0 0 24 24"><path d="M6 4h12v16l-6-4-6 4z"/></svg><span>Presets</span></button>
+    <button data-nav="menu"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>More</span></button>
+  </nav>
+
+  <!-- ============ Drawer ≡ ============ -->
+  <aside class="drawer" id="drawer" aria-hidden="true" aria-label="Настройки / Settings">
+    <header class="panel-head">
+      <h2>Настройки · Settings</h2>
+      <button class="icon-btn" id="btnDrawerClose" aria-label="Закрыть / Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </header>
+    <div class="drawer-body">
+      <fieldset>
+        <legend>Вход · Input</legend>
+        <label>Устройство · Device
+          <select id="optInput"><option value="">По умолчанию / Default</option></select>
+        </label>
+      </fieldset>
+      <fieldset>
+        <legend>Анализатор · Analyzer</legend>
+        <label class="check"><input type="checkbox" id="optPre" checked> Pre (вход / input)</label>
+        <label class="check"><input type="checkbox" id="optPost" checked> Post (выход / output)</label>
+        <label>Скорость · Speed
+          <select id="optSpeed"><option value="slow">Slow</option><option value="medium" selected>Medium</option><option value="fast">Fast</option></select>
+        </label>
+        <label>Наклон · Tilt
+          <select id="optTilt"><option value="0">0 dB/oct</option><option value="3">3 dB/oct</option><option value="4.5" selected>4.5 dB/oct</option><option value="6">6 dB/oct</option></select>
+        </label>
+        <label>Разрешение · Resolution
+          <select id="optFft"><option value="2048">Low</option><option value="4096">Medium</option><option value="8192" selected>High</option><option value="16384">Max</option></select>
+        </label>
+      </fieldset>
+      <fieldset>
+        <legend>Эквалайзер · EQ</legend>
+        <label>Макс. полос · Max bands
+          <select id="optMaxBands"><option value="8">8</option><option value="12">12</option><option value="16">16</option><option value="24">24</option></select>
+        </label>
+        <label>Linear Phase качество · quality
+          <select id="optLinQ"><option value="low">Low (≈21 ms)</option><option value="medium" selected>Medium (≈85 ms)</option><option value="high">High (≈340 ms)</option></select>
+        </label>
+        <label>Регуляторы · Controls
+          <select id="optControls"><option value="knobs">Крутилки / Knobs</option><option value="sliders">Слайдеры / Sliders</option></select>
+        </label>
+      </fieldset>
+      <fieldset>
+        <legend>Интерфейс · Interface</legend>
+        <label>Тема · Theme
+          <select id="optTheme"><option value="auto">Системная / System</option><option value="dark">Тёмная / Dark</option><option value="light">Светлая / Light</option></select>
+        </label>
+        <label class="check"><input type="checkbox" id="optHaptics" checked> Вибро-отклик · Haptics</label>
+        <label class="check"><input type="checkbox" id="optLowPower"> Экономный режим · Low-power mode</label>
+        <button type="button" class="chip-btn" id="btnFullscreen2">Полный экран · Fullscreen</button>
+        <button type="button" class="chip-btn is-accent" id="btnInstall" hidden>Установить приложение · Install</button>
+      </fieldset>
+      <fieldset>
+        <legend>Жесты · Gestures</legend>
+        <ul class="help-list">
+          <li><b>Tap</b> — выбрать узел, открыть панель</li>
+          <li><b>1 палец</b> — частота / усиление</li>
+          <li><b>Pinch</b> по узлу — Q; 2 пальца ↕ — Gain</li>
+          <li><b>Double tap</b> пусто — новая полоса; узел — сброс</li>
+          <li><b>Long press</b> узел — удалить; пусто — меню</li>
+          <li><b>Флик ← →</b> по узлу — тип фильтра</li>
+          <li><b>Pinch</b> по пустому — зум графика</li>
+          <li><b>3 пальца ↓</b> — сбросить все полосы</li>
+          <li><b>Desktop:</b> колесо — Q, Ctrl+колесо — Gain, Shift — точно, Del, Ctrl+Z/Y/C/V</li>
+        </ul>
+      </fieldset>
+      <button type="button" class="chip-btn is-danger" id="btnResetAll">Сбросить все полосы · Reset all bands</button>
+      <p class="panel-note" id="deviceInfo"></p>
+    </div>
+  </aside>
+  <div class="backdrop" id="backdrop"></div>
+
+  <div class="ctx" id="ctx"></div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <div class="rotate-hint" aria-hidden="true">
+    <svg viewBox="0 0 48 48"><rect x="14" y="6" width="20" height="36" rx="3"/><path d="M40 20a16 16 0 0 1-8 14"/></svg>
+    <p>Поверните устройство<br><small>Rotate your device</small></p>
+  </div>
+  <noscript><p class="fatal">Нужен JavaScript / JavaScript is required.</p></noscript>
+</div>
+</body>
+</html>

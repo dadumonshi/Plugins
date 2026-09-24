@@ -1,0 +1,220 @@
+/* mobile.css — уточнения для телефонов/планшетов: брейкпоинты 320/375/414/768,
+   landscape-раскладка, touch-хаки, low-power режим.
+   mobile.css — phone/tablet refinements: 320/375/414/768 breakpoints,
+   landscape layout, touch hacks, low-power mode. */
+
+/* ============ 320px: самые узкие экраны (iPhone SE 1-го поколения) ============ */
+@media (max-width: 359px) {
+  :root { --touch: 44px; --knob: 80px; --fs: 14px; }
+  .topbar { gap: 0; padding-left: 2px; padding-right: 2px; }
+  .rec-time { min-width: 54px; font-size: 13px; }
+  .transport { gap: 4px; padding: 6px 4px; }
+  .tbtn { padding: 0 8px; min-width: 40px; }
+  .seg button { padding: 0 6px; font-size: 12px; }
+  .tgl { padding: 0 7px; font-size: 12px; }
+  .ctl-value { min-width: 84px; font-size: 16px; }
+  .type-chip { min-width: 58px; }
+  .bottom-nav span { font-size: 11px; }
+  /* Скрываем второстепенное в EQ-панели (доступно в drawer ≡) / secondary items live in the drawer */
+  #tglGrab, .range-sel span { display: none; }
+}
+
+/* ============ 375px: iPhone 6/7/8/X/11 Pro/12 mini ============ */
+@media (min-width: 375px) {
+  .transport { gap: 8px; }
+}
+
+/* ============ 414px: iPhone Plus/Max, большие Android ============ */
+@media (min-width: 414px) {
+  .tbtn span { display: inline; }
+  .meter b {
+    display: block;
+    position: absolute;
+    right: 4px; top: -1px;
+    font-size: 8px;
+    color: rgba(255, 255, 255, 0.6);
+    font-weight: 700;
+  }
+  .meter { height: 10px; }
+}
+
+/* ============ Телефон портрет: EQ-панель одной строкой с прокруткой ============
+   Phone portrait: EQ bar in one scrollable row (the PAGE never scrolls horizontally) */
+@media (max-width: 767px) {
+  .eq-bar {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+  }
+  .eq-bar::-webkit-scrollbar { display: none; }
+  .eq-bar > * { flex: none; }
+  /* FAB поднимается над выглядывающей панелью / FAB lifts above the peeking sheet */
+  html[data-sheet="peek"] .fab { transform: translateY(calc(-1 * var(--peek-h) + 40px)); }
+  html[data-sheet="full"] .fab { opacity: 0; pointer-events: none; }
+  .zoom-reset { right: auto; left: 50%; transform: translateX(-50%); }
+}
+
+/* На телефоне/планшете панель полосы видна только на экране EQ, а выбор входа — в drawer ≡.
+   On phones/tablets the band panel lives on the EQ screen only; input picker is in the drawer ≡. */
+@media (max-width: 1023px) {
+  .app:not([data-view="eq"]) .sheet { display: none; }
+}
+@media (max-width: 767px) {
+  .transport .input-sel { display: none !important; }
+}
+
+/* ============ Touch-устройства (pointer: coarse) ============ */
+@media (pointer: coarse) {
+  /* Узлы ≥ 28px диаметр / nodes ≥ 28px diameter */
+  .graph-wrap { --node-r: 14px; }
+  .node-num { font-size: 13px; }
+  /* Hover на touch не бывает — «липкий» hover отключаем / no sticky hover on touch */
+  .ctx-item:hover { background: none; }
+  .ctx-item:active { background: var(--bg3); }
+  .ctx-item { min-height: 48px; }
+  select { min-height: 44px; }
+}
+
+/* ============ 768px: планшет портрет ============ */
+@media (min-width: 768px) {
+  :root { --knob: 88px; --peek-h: 0px; }
+  .brand { display: flex; }
+  .preset-btn { flex: 0 1 320px; margin: 0 auto; }
+  .tbtn span { display: inline; }
+  .meters { max-width: 260px; margin-left: auto; }
+  .graph-wrap { min-height: 50dvh; }
+
+  /* Панель полосы — плавающая над графиком (как у Pro-Q), не bottom sheet.
+     Band panel floats over the graph (Pro-Q-like) instead of a bottom sheet. */
+  .sheet {
+    position: absolute;
+    left: 50%;
+    right: auto;
+    bottom: 64px;
+    width: min(680px, calc(100% - 24px));
+    max-height: min(420px, 70%);
+    border-radius: 16px;
+    border: 1px solid var(--line);
+    border-top: 3px solid var(--band, var(--accent));
+    transform: translate(-50%, 16px);
+    opacity: 0;
+    pointer-events: none;
+    transition: transform 0.2s, opacity 0.2s;
+  }
+  .sheet[data-state="peek"], .sheet[data-state="full"] {
+    transform: translate(-50%, 0);
+    opacity: 0.97;
+    pointer-events: auto;
+  }
+  .sheet-grabber, [data-act="expand"] { display: none; }
+  .band-head-row { cursor: default; min-height: 52px; }
+  .band-body { padding-bottom: 14px; }
+  html[data-sheet="full"] .fab { opacity: 0; pointer-events: none; }
+  .app[data-view="presets"] .presets-view { max-width: 640px; margin: 0 auto; }
+}
+
+/* ============ Планшет/десктоп: скрыть мобильную навигацию, если есть рэк ============ */
+@media (min-width: 1024px) {
+  .bottom-nav { display: none; }
+}
+
+/* ============ LANDSCAPE телефон: график слева, панель справа, rail-навигация ============
+   Phone LANDSCAPE: graph left, panel right, navigation rail */
+@media (orientation: landscape) and (max-height: 540px) and (max-width: 1023px) {
+  :root { --top-h: 44px; --knob: 72px; --nav-h: 0px; }
+  .app {
+    grid-template-columns: calc(64px + var(--sal)) minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-areas: "nav top" "nav work";
+    padding-left: 0;
+  }
+  /* Транспорт встраиваем в верхнюю строку / transport merges into the top row */
+  .topbar { grid-area: top; padding-top: 0; min-height: var(--top-h); }
+  .transport {
+    grid-area: top;
+    justify-self: end;
+    align-self: center;
+    background: transparent;
+    border: 0;
+    padding: 0 6px;
+    z-index: 2;
+  }
+  .topbar .top-actions { display: none; }
+  .preset-btn { flex: 0 1 200px; margin: 0; }
+  .meters { width: 90px; flex: none; }
+  .tbtn span, .brand { display: none; }
+  .rec-btn { width: 40px; height: 40px; }
+
+  .bottom-nav {
+    grid-area: nav;
+    flex-direction: column;
+    height: auto;
+    padding: var(--sat) 0 var(--sab) var(--sal); /* вырез слева в альбомной / notch on the left */
+    border-top: 0;
+    border-right: 1px solid var(--line);
+  }
+  .bottom-nav span { font-size: 10px; }
+
+  .graph-wrap { min-height: 0; }
+  .editor-head { min-height: 34px; }
+  .fx-tab { min-height: 28px; }
+  .eq-bar { padding: 4px 6px; }
+  .seg button, .tgl { min-height: 34px; }
+
+  /* Панель полосы — сбоку справа / band panel on the right side */
+  .app[data-view="eq"] .editor { right: min(300px, 42vw); }
+  .sheet {
+    position: absolute;
+    top: 0; bottom: 0; right: 0; left: auto;
+    width: min(300px, 42vw);
+    max-height: none;
+    border-radius: 0;
+    border-top: 0;
+    border-left: 3px solid var(--band, var(--accent));
+    transform: none !important;
+    opacity: 1;
+    pointer-events: auto;
+    box-shadow: none;
+    padding-right: var(--sar);
+  }
+  .sheet[data-state="hidden"] .band-body, .sheet[data-state="hidden"] .band-head { visibility: hidden; }
+  .sheet[data-state="hidden"]::after {
+    content: "Выберите полосу · Select a band";
+    position: absolute; inset: 0;
+    display: grid; place-items: center;
+    color: var(--muted); font-size: 14px; text-align: center; padding: 16px;
+  }
+  .sheet-grabber, [data-act="expand"] { display: none; }
+  .ctl-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .ctl-value { min-width: 0; font-size: 15px; }
+  .band-body { padding-bottom: 12px; gap: 10px; }
+  .fab { right: 10px; bottom: 16px; width: 48px; height: 48px; }
+  html[data-sheet] .fab { transform: none; opacity: 1; pointer-events: auto; }
+  .toast { bottom: calc(12px + var(--sab)); }
+}
+
+/* Очень низкий landscape (≤ 300px) — предлагаем повернуть устройство.
+   Extremely short landscape — suggest rotating the device. */
+@media (orientation: landscape) and (max-height: 300px) {
+  .rotate-hint { display: flex; }
+}
+
+/* ============ Экономный режим / Low-power mode ============
+   Отключаем тяжёлые эффекты: blur, тени, drop-shadow, анимации.
+   Disables heavy effects: blur, shadows, drop-shadow, animations. */
+.low-power .node.is-selected, .low-power .node.is-drag { filter: none; }
+.low-power .sheet, .low-power .fab, .low-power .toast, .low-power .ctx-list,
+.low-power .drawer, .low-power .g-loupe canvas { box-shadow: none; }
+.low-power .band-dot { box-shadow: none; }
+.low-power .g-ripple { display: none; }
+.low-power .rec-btn.is-on i { animation: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .node.is-selected, .node.is-drag { filter: none; }
+  .sheet, .drawer, .fab { transition: none; }
+}
+
+/* ============ Standalone PWA: учёт статус-бара iOS ============ */
+.is-standalone .topbar { padding-top: max(var(--sat), 4px); }

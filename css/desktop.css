@@ -1,0 +1,112 @@
+/* desktop.css — раскладка ≥1024px (планшет landscape, ноутбук, десктоп), 1440 и 1920.
+   desktop.css — ≥1024px layout (tablet landscape, laptop, desktop), plus 1440 and 1920. */
+
+:root {
+  --knob: 72px;
+  --fs: 14px;
+  --touch: 40px;
+}
+/* На сенсорных планшетах ≥1024 оставляем крупные цели / keep big targets on touch tablets */
+.is-coarse { --touch: 48px; --knob: 84px; }
+
+.app {
+  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-areas: "top" "transport" "work";
+}
+
+.topbar { padding-left: 12px; padding-right: 12px; gap: 10px; }
+#btnMenu { order: 10; } /* меню настроек справа, как у десктоп-плагинов / settings menu on the right */
+
+.transport { padding: 8px 14px; gap: 10px; }
+.input-sel:not([hidden]) { display: block; max-width: 220px; }
+
+/* Рэк слева всегда виден, редактор справа / rack always visible on the left */
+.workspace {
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr);
+}
+.rack, .editor {
+  position: relative;
+  inset: auto;
+  display: flex;
+  visibility: visible !important;
+}
+.rack { border-right: 1px solid var(--line); }
+.app[data-view="fx"] .takes-panel, .app[data-view="rec"] .fx-panel { display: grid; }
+.takes-panel { border-top: 1px solid var(--line); }
+
+.graph-wrap { --node-r: 9px; min-height: 0; }
+.is-coarse .graph-wrap { --node-r: 14px; }
+.node-num { font-size: 10px; }
+.is-coarse .node-num { font-size: 12px; }
+
+.fab { display: none; }
+.is-coarse .fab { display: grid; }
+
+.eq-bar { padding: 8px 12px; gap: 8px; flex-wrap: nowrap; }
+.tgl-bypass { margin-left: auto; }
+
+/* Плавающая панель полосы по центру графика (Pro-Q-стиль) / floating band panel */
+.sheet {
+  position: absolute;
+  left: calc(300px + (100% - 300px) / 2);
+  bottom: 70px;
+  width: min(720px, calc(100% - 340px));
+}
+.band-body {
+  grid-template-columns: auto 1fr;
+  grid-template-areas: "ctl types" "ctl opts" "ctl acts";
+  align-items: start;
+  column-gap: 20px;
+}
+.ctl-row { grid-area: ctl; grid-template-columns: repeat(3, auto); align-self: center; }
+.ctl-row[data-style="sliders"] { width: 260px; grid-template-columns: 1fr; }
+.type-chips { grid-area: types; flex-wrap: wrap; overflow: visible; }
+.type-chip { min-width: 58px; min-height: 48px; font-size: 10px; }
+.type-chip svg { width: 28px; height: 24px; }
+.opt-row { grid-area: opts; }
+/* Мышь: компактная панель, иконки типов без подписей / mouse: compact panel, icon-only types */
+@media (pointer: fine) {
+  .sheet .knob { --knob: 60px; }
+  .type-chip { min-width: 44px; min-height: 40px; padding: 4px; }
+  .type-chip span { display: none; }
+  .band-body { row-gap: 8px; }
+}
+.act-row { grid-area: acts; }
+
+/* Пресеты — выезжающая справа панель / presets as a right slide-over */
+.presets-view {
+  position: absolute;
+  top: 0; right: 0; bottom: 0; left: auto;
+  width: 400px;
+  border-left: 1px solid var(--line);
+  box-shadow: var(--shadow);
+  display: flex;
+  transform: translateX(105%);
+  transition: transform 0.22s ease;
+}
+.app[data-view="presets"] .presets-view { transform: none; }
+.app[data-view="presets"] .editor { visibility: visible; }
+
+/* Hover есть только у мыши / hover exists only with a mouse */
+@media (hover: hover) {
+  .icon-btn:hover:not(:disabled), .chip-btn:hover:not(:disabled), .tgl:hover, .tbtn:hover, .fx-tab:hover { filter: brightness(1.18); }
+  .preset-row:hover, .take:hover, .fx-item:hover { background: var(--bg3); }
+}
+
+.toast { bottom: 24px; }
+
+/* ============ 1440px ============ */
+@media (min-width: 1440px) {
+  .workspace { grid-template-columns: 340px minmax(0, 1fr); }
+  .sheet { left: calc(340px + (100% - 340px) / 2); width: min(760px, calc(100% - 380px)); }
+  :root { --fs: 15px; }
+}
+
+/* ============ 1920px ============ */
+@media (min-width: 1920px) {
+  .workspace { grid-template-columns: 380px minmax(0, 1fr); }
+  .sheet { left: calc(380px + (100% - 380px) / 2); }
+  :root { --knob: 80px; --fs: 16px; }
+  .graph-wrap { --node-r: 10px; }
+}

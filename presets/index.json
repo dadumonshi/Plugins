@@ -1,0 +1,74 @@
+{
+  "presets": [
+    {
+      "id": "vocal-presence",
+      "name": "Vocal Presence",
+      "author": "Factory",
+      "category": "Vocal",
+      "bands": 4
+    },
+    {
+      "id": "podcast-voice",
+      "name": "Podcast Voice",
+      "author": "Factory",
+      "category": "Voice",
+      "bands": 5
+    },
+    {
+      "id": "de-mud",
+      "name": "De-Mud",
+      "author": "Factory",
+      "category": "Mix",
+      "bands": 2
+    },
+    {
+      "id": "air",
+      "name": "Air",
+      "author": "Factory",
+      "category": "Master",
+      "bands": 1
+    },
+    {
+      "id": "bass-boost",
+      "name": "Bass Boost",
+      "author": "Factory",
+      "category": "Master",
+      "bands": 3
+    },
+    {
+      "id": "telephone",
+      "name": "Telephone",
+      "author": "Factory",
+      "category": "FX",
+      "bands": 3
+    },
+    {
+      "id": "mid-side-wide",
+      "name": "Mid/Side Wide",
+      "author": "Factory",
+      "category": "Master",
+      "bands": 3
+    },
+    {
+      "id": "guitar-clarity",
+      "name": "Acoustic Guitar Clarity",
+      "author": "Factory",
+      "category": "Instrument",
+      "bands": 4
+    },
+    {
+      "id": "hum-removal",
+      "name": "Hum Removal 50 Hz",
+      "author": "Factory",
+      "category": "Repair",
+      "bands": 4
+    },
+    {
+      "id": "warm-tilt",
+      "name": "Warm Tilt",
+      "author": "Factory",
+      "category": "Master",
+      "bands": 1
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+# Apache: красивые URL для REST API / pretty URLs for the REST API
+Options -Indexes
+RewriteEngine On
+RewriteRule ^api/(.*)$ php/api.php/$1 [QSA,L]
+
+# Правильные MIME для PWA и ES-модулей / correct MIME types for PWA and ES modules
+AddType application/manifest+json .webmanifest
+AddType text/javascript .js .mjs
+
+# Service Worker не кешируем, чтобы обновления доходили / never cache the SW itself
+<Files "sw.js">
+  Header set Cache-Control "no-cache"
+</Files>
+
+# Внутренний файл без прямого доступа / internal file, no direct access
+<Files "storage.php">
+  Require all denied
+</Files>

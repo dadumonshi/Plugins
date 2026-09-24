@@ -1,0 +1,23 @@
+{
+  "name": "Air",
+  "author": "Factory",
+  "category": "Master",
+  "version": 1,
+  "factory": true,
+  "eq": {
+    "mode": "zero",
+    "autoGain": false,
+    "outputGain": 0,
+    "bands": [
+      {
+        "type": "highshelf",
+        "freq": 12000,
+        "gain": 3.5,
+        "q": 0.6,
+        "slope": 12,
+        "placement": "stereo",
+        "enabled": true
+      }
+    ]
+  }
+}

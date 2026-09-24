@@ -1,0 +1,5 @@
+# Пользовательские пресеты — данные сервера / user presets are server data
+presets/user/*.json
+presets/user/.lock
+.DS_Store
+node_modules/

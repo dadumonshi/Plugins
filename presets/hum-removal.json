@@ -1,0 +1,50 @@
+{
+  "name": "Hum Removal 50 Hz",
+  "author": "Factory",
+  "category": "Repair",
+  "version": 1,
+  "factory": true,
+  "eq": {
+    "mode": "zero",
+    "autoGain": false,
+    "outputGain": 0,
+    "bands": [
+      {
+        "type": "notch",
+        "freq": 50,
+        "gain": 0,
+        "q": 12,
+        "slope": 12,
+        "placement": "stereo",
+        "enabled": true
+      },
+      {
+        "type": "notch",
+        "freq": 100,
+        "gain": 0,
+        "q": 12,
+        "slope": 12,
+        "placement": "stereo",
+        "enabled": true
+      },
+      {
+        "type": "notch",
+        "freq": 150,
+        "gain": 0,
+        "q": 12,
+        "slope": 12,
+        "placement": "stereo",
+        "enabled": true
+      },
+      {
+        "type": "lowcut",
+        "freq": 30,
+        "gain": 0,
+        "q": 0.71,
+        "slope": 24,
+        "placement": "stereo",
+        "enabled": true
+      }
+    ]
+  }
+}

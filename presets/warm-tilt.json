@@ -1,0 +1,23 @@
+{
+  "name": "Warm Tilt",
+  "author": "Factory",
+  "category": "Master",
+  "version": 1,
+  "factory": true,
+  "eq": {
+    "mode": "zero",
+    "autoGain": false,
+    "outputGain": 0,
+    "bands": [
+      {
+        "type": "flattilt",
+        "freq": 1000,
+        "gain": -4,
+        "q": 1,
+        "slope": 12,
+        "placement": "stereo",
+        "enabled": true
+      }
+    ]
+  }
+}

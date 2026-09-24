@@ -1,0 +1,76 @@
+/* reset.css — минимальный сброс + мобильные хаки браузеров.
+   reset.css — minimal reset + mobile browser hacks. */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html {
+  /* iOS: запрет авто-увеличения шрифта при повороте / no font inflation on rotation */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  /* Убираем серую/синюю подсветку тапа (Android/iOS) / remove tap highlight */
+  -webkit-tap-highlight-color: transparent;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  /* Страница не скроллится целиком — скроллятся только панели.
+     Это также убирает «прыжки» адресной строки мобильных браузеров.
+     The page itself never scrolls — only inner panels do. This also
+     avoids mobile address-bar jumps. */
+  overflow: hidden;
+  /* Нет pull-to-refresh и «резинки» (Chrome Android / iOS) / no pull-to-refresh & bounce */
+  overscroll-behavior: none;
+}
+
+body {
+  line-height: 1.35;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1, h2, h3, h4, p, ul, ol, figure, fieldset, legend { margin: 0; padding: 0; }
+ul, ol { list-style: none; }
+fieldset { border: 0; min-width: 0; }
+img, svg, canvas { display: block; max-width: 100%; }
+
+button, input, select, textarea {
+  font: inherit;
+  color: inherit;
+  margin: 0;
+}
+
+button {
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  /* Убираем задержку 300 мс и двойной тап-зум / removes 300 ms delay & double-tap zoom */
+  touch-action: manipulation;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+button:disabled { cursor: default; }
+
+/* Отключаем системную лупу/меню выделения на элементах управления.
+   Disable system magnifier/selection menu on controls. */
+button, .icon-btn, .tbtn, .rec-btn, .bottom-nav, .knob-dial {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+[hidden] { display: none !important; }
+
+:focus:not(:focus-visible) { outline: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

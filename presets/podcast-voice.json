@@ -1,0 +1,59 @@
+{
+  "name": "Podcast Voice",
+  "author": "Factory",
+  "category": "Voice",
+  "version": 1,
+  "factory": true,
+  "eq": {
+    "mode": "zero",
+    "autoGain": false,
+    "outputGain": 0,
+    "bands": [
+      {
+        "type": "lowcut",
+        "freq": 80,
+        "gain": 0,
+        "q": 0.71,
+        "slope": 36,
+        "placement": "stereo",
+        "enabled": true
+      },
+      {
+        "type": "bell",
+        "freq": 180,
+        "gain": 1.5,
+        "q": 0.8,
+        "slope": 12,
+        "placement": "stereo",
+        "enabled": true
+      },
+      {
+        "type": "bell",
+        "freq": 450,
+        "gain": -3,
+        "q": 1.4,
+        "slope": 12,
+        "placement": "stereo",
+        "enabled": true
+      },
+      {
+        "type": "bell",
+        "freq": 5500,
+        "gain": 2,
+        "q": 1.5,
+        "slope": 12,
+        "placement": "stereo",
+        "enabled": true
+      },
+      {
+        "type": "highcut",
+        "freq": 16000,
+        "gain": 0,
+        "q": 0.71,
+        "slope": 12,
+        "placement": "stereo",
+        "enabled": true
+      }
+    ]
+  }
+}

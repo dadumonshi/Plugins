@@ -1,0 +1,41 @@
+{
+  "name": "Mid/Side Wide",
+  "author": "Factory",
+  "category": "Master",
+  "version": 1,
+  "factory": true,
+  "eq": {
+    "mode": "zero",
+    "autoGain": false,
+    "outputGain": 0,
+    "bands": [
+      {
+        "type": "lowcut",
+        "freq": 120,
+        "gain": 0,
+        "q": 0.71,
+        "slope": 12,
+        "placement": "side",
+        "enabled": true
+      },
+      {
+        "type": "highshelf",
+        "freq": 6000,
+        "gain": 3,
+        "q": 0.71,
+        "slope": 12,
+        "placement": "side",
+        "enabled": true
+      },
+      {
+        "type": "bell",
+        "freq": 2500,
+        "gain": -1,
+        "q": 1,
+        "slope": 12,
+        "placement": "mid",
+        "enabled": true
+      }
+    ]
+  }
+}
