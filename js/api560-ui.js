@@ -13,7 +13,7 @@ import { LITE_MODES, LITE_MODE_LABELS, LITE_UPSAMPLING } from './api560.js';
 import { SpectrumAnalyzer } from './spectrum.js';
 import { IndependentPointers } from './gestures.js';
 import { Knob } from './mobile-ui.js';
-import { haptics } from './touch.js';
+import { haptics, canvasDpr, releaseCanvas } from './touch.js';
 
 const SVGNS = 'http://www.w3.org/2000/svg';
 const F_MIN = 20, F_MAX = 20000, RANGE = 15;
@@ -104,7 +104,7 @@ export class LiteGraph {
   resize() {
     const r = this.wrap.getBoundingClientRect();
     const w = Math.max(10, Math.round(r.width)), h = Math.max(10, Math.round(r.height));
-    const dpr = Math.min(window.devicePixelRatio || 1, this.lowPower ? 1.5 : 2.5);
+    const dpr = canvasDpr(this.lowPower);
     if (w === this.w && h === this.h && dpr === this.dpr) return;
     this.w = w; this.h = h; this.dpr = dpr;
     for (const c of [this.cGrid, this.cMain]) {
@@ -153,7 +153,14 @@ export class LiteGraph {
     };
     this._raf = requestAnimationFrame(loop);
   }
-  stop() { this._running = false; cancelAnimationFrame(this._raf); }
+  stop() {
+    this._running = false;
+    cancelAnimationFrame(this._raf);
+    // Скрытый редактор не держит память GPU / a hidden editor holds no GPU memory
+    [this.cGrid, this.cMain].forEach(releaseCanvas);
+    this.w = this.h = 0;
+    this.dirtyGrid = true;
+  }
 
   refreshTheme() { this.dirtyGrid = true; }
 

@@ -1,0 +1,53 @@
+{
+  "profiles": [
+    {
+      "id": "hiss",
+      "name": "Шипение (фон предусилителя)",
+      "factory": true,
+      "fftSize": 2048,
+      "sampleRate": 48000
+    },
+    {
+      "id": "hum-50",
+      "name": "Гул 50 Гц с гармониками",
+      "factory": true,
+      "fftSize": 2048,
+      "sampleRate": 48000
+    },
+    {
+      "id": "hum-60",
+      "name": "Гул 60 Гц с гармониками",
+      "factory": true,
+      "fftSize": 2048,
+      "sampleRate": 48000
+    },
+    {
+      "id": "hvac",
+      "name": "Кондиционер / вентиляция",
+      "factory": true,
+      "fftSize": 2048,
+      "sampleRate": 48000
+    },
+    {
+      "id": "room",
+      "name": "Комнатный шум",
+      "factory": true,
+      "fftSize": 2048,
+      "sampleRate": 48000
+    },
+    {
+      "id": "fan",
+      "name": "Вентилятор компьютера",
+      "factory": true,
+      "fftSize": 2048,
+      "sampleRate": 48000
+    },
+    {
+      "id": "street",
+      "name": "Улица / ветер",
+      "factory": true,
+      "fftSize": 2048,
+      "sampleRate": 48000
+    }
+  ]
+}

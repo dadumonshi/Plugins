@@ -13,6 +13,7 @@
  */
 import { makeResponder, magDb, GAINLESS, FILTER_LABELS, LIMITS, clamp } from './dsp.js';
 import { BAND_COLORS } from './eq.js';
+import { canvasDpr, releaseCanvas } from './touch.js';
 
 /* ---------------- форматирование / formatting ---------------- */
 
@@ -189,7 +190,7 @@ export class EQGraph extends EventTarget {
     const h = Math.max(10, Math.round(r.height));
     // DPR ограничиваем на слабых устройствах (меньше пикселей → быстрее).
     // Cap DPR on weak devices (fewer pixels → faster).
-    const dpr = Math.min(window.devicePixelRatio || 1, this.lowPower ? 1.5 : 2.5);
+    const dpr = canvasDpr(this.lowPower);
     if (w === this.w && h === this.h && dpr === this.dpr) return;
     this.w = w; this.h = h; this.dpr = dpr;
     for (const c of [this.cGrid, this.cSpec, this.cCurve]) {
@@ -314,7 +315,14 @@ export class EQGraph extends EventTarget {
     this._raf = requestAnimationFrame(loop);
   }
 
-  stop() { this._running = false; cancelAnimationFrame(this._raf); }
+  stop() {
+    this._running = false;
+    cancelAnimationFrame(this._raf);
+    // Скрытый редактор не держит память GPU / a hidden editor holds no GPU memory
+    [this.cGrid, this.cSpec, this.cCurve].forEach(releaseCanvas);
+    this.w = this.h = 0;
+    this.dirty.grid = this.dirty.curve = true;
+  }
 
   renderNow() {
     if (!this.w) return;

@@ -247,7 +247,7 @@ export class Recorder extends EventTarget {
       // Плагины на AudioWorklet (де-эссер) грузят модуль асинхронно / worklet plugins load async
       if (p.ready) await p.ready;
       // В офлайне FIR считается синхронно / offline: design FIR synchronously
-      if (p.model && p.model.settings.mode !== 'zero') await p._computeFir?.();
+      if (p.model?.settings && p.model.settings.mode !== 'zero') await p._computeFir?.(); // только EQ 24
       prev.connect(p.input);
       prev = p.output;
       plugins.push(p);

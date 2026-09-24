@@ -178,6 +178,49 @@
         <canvas class="ds-history" id="dsHistory" aria-hidden="true"></canvas>
       </div>
 
+      <!-- Movexe DeNoise -->
+      <div class="dn-editor" id="dnEditor">
+        <div class="ds-stage">
+          <div class="graph-wrap dn-wrap" id="dnGraphWrap">
+            <button class="zoom-reset" id="dnZoomReset" hidden>Масштаб 1:1</button>
+            <!-- FAB — главное действие: обучение шуму / main action: learn the noise -->
+            <button class="fab dn-fab" id="dnFab" aria-label="Обучить профиль шума" title="Обучение шуму">
+              <svg viewBox="0 0 36 36" class="dn-ring" aria-hidden="true"><circle cx="18" cy="18" r="16"/><circle class="dn-ring-val" cx="18" cy="18" r="16"/></svg>
+              <span>Learn</span>
+            </button>
+          </div>
+          <div class="ds-side" aria-label="Индикаторы шумоподавления">
+            <span class="ds-led" id="dnLed" title="Подавление активно"></span>
+            <div class="ds-grval mono"><b id="dnGrText">0.0</b><small>дБ</small></div>
+            <div class="ds-meters">
+              <div class="vmeter" title="Вход"><i id="dnIn"></i><b>ВХ</b></div>
+              <div class="vmeter vmeter-dngr" title="Подавление"><i id="dnGrBar"></i><b>GR</b></div>
+              <div class="vmeter" title="Выход"><i id="dnOut"></i><b>ВЫХ</b></div>
+            </div>
+          </div>
+        </div>
+        <canvas class="dn-spectrogram" id="dnSpectrogram" aria-hidden="true" hidden></canvas>
+        <div class="lite-bar dn-bar" id="dnBar">
+          <div class="dn-modes-big" role="group" aria-label="Режим">
+            <button type="button" class="dn-big" data-mode="learn" aria-pressed="false">Обучение</button>
+            <button type="button" class="dn-big" data-mode="reduce" aria-pressed="false">Подавление</button>
+            <button type="button" class="dn-big" data-mode="adaptive" aria-pressed="false">Адаптивный</button>
+          </div>
+          <div class="seg" role="group" aria-label="Кисть">
+            <button type="button" data-brush="draw" title="Рисовать">✎</button>
+            <button type="button" data-brush="smooth" title="Сгладить">≈</button>
+            <button type="button" data-brush="erase" title="Стереть">⌫</button>
+          </div>
+          <div class="seg" role="group" aria-label="Что редактировать">
+            <button type="button" data-target="reduction">Кривая</button>
+            <button type="button" data-target="profile">Профиль</button>
+          </div>
+          <button type="button" class="tgl" data-act="freeze">Заморозить</button>
+          <button type="button" class="tgl" data-act="zoom" hidden>1:1</button>
+          <button type="button" class="tgl" data-act="settings">Параметры</button>
+        </div>
+      </div>
+
       <!-- Movexe EQ Lite -->
       <div class="lite-editor" id="liteEditor">
         <div class="graph-wrap lite-wrap" id="liteGraphWrap">
@@ -212,6 +255,12 @@
 
     <!-- ============ Панель де-эссера (bottom sheet) ============ -->
     <section class="sheet ds-sheet" id="dsSheet" data-state="hidden" aria-label="Параметры де-эссера" aria-hidden="true">
+      <div class="band-head"></div>
+      <div class="band-body"></div>
+    </section>
+
+    <!-- ============ Параметры Movexe DeNoise (bottom sheet) ============ -->
+    <section class="sheet dn-sheet" id="dnSheet" data-state="hidden" aria-label="Параметры шумоподавителя" aria-hidden="true">
       <div class="band-head"></div>
       <div class="band-body"></div>
     </section>
@@ -324,6 +373,17 @@
           <li><b>Двойное касание</b> — обход вкл/выкл</li>
           <li><b>Касание</b> — выбрать параметр и открыть панель</li>
         </ul>
+      </fieldset>
+      <fieldset class="help-dn">
+        <legend>Жесты Movexe DeNoise</legend>
+        <ul class="help-list">
+          <li><b>1 палец</b> — рисовать кривую подавления (или профиль шума)</li>
+          <li><b>Щипок</b> — масштаб по частоте; <b>2 пальца ↔</b> — сдвиг</li>
+          <li><b>Долгое нажатие</b> — выбор кисти: рисовать / сгладить / стереть</li>
+          <li><b>Двойное касание</b> — сбросить кривую к профилю</li>
+          <li><b>Касание</b> — выбрать точку; её можно перетащить отдельно</li>
+        </ul>
+        <label class="check"><input type="checkbox" id="optSpectrogram"> Спектрограмма (водопад)</label>
       </fieldset>
       <fieldset class="help-lite">
         <legend>Жесты Movexe EQ Lite</legend>

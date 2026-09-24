@@ -83,7 +83,17 @@
 .lite-bank { flex: 1 1 0; min-height: calc(220px * var(--lite-scale)); max-height: calc(420px * var(--lite-scale)); }
 .lite-sheet .band-body { display: flex; flex-wrap: wrap; gap: 10px 24px; align-items: center; padding: 6px 14px 12px; }
 .lite-sheet .panel-note { flex-basis: 100%; }
-.app .ds-sheet, .app .lite-sheet { /* .app — специфичность выше, чем у медиа-правил .sheet ниже */
+.dn-wrap { min-height: 0; }
+.dn-sheet .band-body { display: block; padding: 6px 14px 12px; }
+.dn-sheet .dn-modes { margin-bottom: 8px; }
+.dn-knobs { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); }
+.dn-sheet .knob { --knob: 54px; }
+.dn-sheet .ctl-value { min-width: 0; font-size: 13px; }
+.dn-sheet .ctl-label { font-size: 10px; letter-spacing: 0.02em; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dn-sheet .panel-note { display: none; } /* на ПК подсказка есть в меню ≡ / hint lives in the ≡ menu */
+.dn-sheet .act-row { margin-top: 8px; }
+.dn-sheet[data-state="hidden"] .band-body, .dn-sheet[data-state="hidden"] .band-head { visibility: visible; }
+.app .ds-sheet, .app .lite-sheet, .app .dn-sheet { /* .app — специфичность выше, чем у медиа-правил .sheet ниже */
   position: relative;
   grid-column: 2;
   grid-row: 2;
@@ -126,7 +136,7 @@
 
 /* Hover есть только у мыши / hover exists only with a mouse */
 @media (hover: hover) {
-  .icon-btn:hover:not(:disabled), .chip-btn:hover:not(:disabled), .tgl:hover, .tbtn:hover, .fx-tab:hover { filter: brightness(1.18); }
+  .icon-btn:hover:not(:disabled), .chip-btn:hover:not(:disabled), .tgl:hover, .tbtn:hover, .fx-tab:hover { background-color: var(--bg3); }
   .preset-row:hover, .take:hover, .fx-item:hover { background: var(--bg3); }
 }
 

@@ -2,7 +2,8 @@
  * app.js — точка входа: связывает аудио-движок, цепочку эффектов, запись, графики, жесты и мобильный UI.
  * app.js — entry point: wires the audio engine, FX chain, recorder, graphs, gestures and mobile UI.
  *
- * Эффекты / Effects: Movexe EQ 24 (eq.js), Movexe DeEss (deesser.js), Movexe EQ Lite (api560.js).
+ * Эффекты / Effects: Movexe EQ 24 (eq.js), Movexe DeEss (deesser.js), Movexe EQ Lite (api560.js),
+ * Movexe DeNoise (denoiser.js).
  */
 import { AudioEngine, audioSupported, micSupported } from './audio.js';
 import { registerPlugin, listPlugins, getPlugin } from './fx-chain.js';
@@ -14,6 +15,12 @@ import { DeEssGraph } from './graph.js';
 import { GraphGestures, DeEssGestures } from './gestures.js';
 import { DeEssPanel } from './deesser-ui.js';
 import { LitePlugin, LITE_MODES } from './api560.js';
+import { DenoisePlugin } from './denoiser.js';
+import { DenoiseGraph } from './denoise-graph.js';
+import { SpectralEditor, BRUSH_LABELS, TARGET_LABELS } from './spectral-editor.js';
+import { DenoisePanel, DenoiseBar } from './denoise-ui.js';
+import { Spectrogram } from './spectrogram.js';
+import { learnFromBuffer, profileToJSON, profileFromJSON } from './learn.js';
 import { LiteGraph, FaderBank, LitePanel } from './api560-ui.js';
 import { haptics } from './touch.js';
 import {
@@ -21,6 +28,7 @@ import {
 } from './mobile-ui.js';
 import { PresetStore, downloadBlob } from './presets.js';
 import { FILTER_TYPES, FILTER_LABELS, GAINLESS } from './dsp.js';
+import { DN_DEFAULTS as DN_RESET } from './spectral.js';
 
 const $ = (s) => document.querySelector(s);
 const SESSION_KEY = 'proeq.session.v1';
@@ -44,7 +52,8 @@ const prefs = Object.assign({
   range: 12,
   linearQuality: 'medium',
   tap: 'wet', loop: false,
-  liteScale: 100
+  liteScale: 100,
+  spectrogram: false
 }, loadPrefs());
 
 /* ---------------- тема и классы <html> / theme & root classes ---------------- */
@@ -93,6 +102,9 @@ function applyLiteScale(v) {
 const litePanel = new LitePanel($('#liteSheet'), liteSheet, { toast, onScale: applyLiteScale });
 litePanel.setScale(prefs.liteScale);
 $('#liteEditor').style.setProperty('--lite-scale', String(prefs.liteScale / 100));
+const dnSheet = new BottomSheet($('#dnSheet'));
+const dnGraph = new DenoiseGraph($('#dnGraphWrap'), { lowPower: prefs.lowPower });
+const dnSpectro = new Spectrogram($('#dnSpectrogram'));
 const presets = new PresetStore();
 
 function fatal(msg) {
@@ -110,6 +122,7 @@ try {
   registerPlugin(ProEQPlugin);
   registerPlugin(DeEsserPlugin);
   registerPlugin(LitePlugin);
+  registerPlugin(DenoisePlugin);
   engine = new AudioEngine({ lowPower: prefs.lowPower, fftSize: prefs.fftSize, maxBands: prefs.maxBands });
   recorder = new Recorder(engine);
   recorder.tapMode = prefs.tap;
@@ -142,6 +155,7 @@ function selectSlot(id) {
   const eqPlugin = editor === 'eq' ? slot.plugin : null;
   const dsPlugin = editor === 'deesser' ? slot.plugin : null;
   const litePlugin = editor === 'lite' ? slot.plugin : null;
+  const dnPlugin = editor === 'denoise' ? slot.plugin : null;
   $('#app').dataset.editor = editor || 'none';
 
   graph.bind(eqPlugin, engine);
@@ -151,12 +165,21 @@ function selectSlot(id) {
   liteGraph.bind(litePlugin, engine);
   faderBank.bind(litePlugin);
   litePanel.bind(litePlugin);
+  dnGraph.bind(dnPlugin, engine);
+  dnPanel.bind(dnPlugin);
+  dnBar.bind(dnPlugin);
   // Рисуем только видимый график (экономия батареи) / draw only the visible graph
   if (eqPlugin) { graph.start(); requestAnimationFrame(() => graph.resize()); } else { graph.stop(); sheet.set('hidden'); }
   if (dsPlugin) { dsGraph.start(); requestAnimationFrame(() => dsGraph.resize()); dsSheet.set(dsSheet.isSheet ? 'peek' : 'full'); }
   else { dsGraph.stop(); dsSheet.set('hidden'); }
   if (litePlugin) { liteGraph.start(); requestAnimationFrame(() => liteGraph.resize()); liteSheet.set(matchMedia('(min-width: 1024px)').matches ? 'full' : 'hidden'); }
   else { liteGraph.stop(); liteSheet.set('hidden'); }
+  if (dnPlugin) {
+    dnGraph.start();
+    requestAnimationFrame(() => { dnGraph.resize(); dnSpectro.resize(); });
+    dnSheet.set(matchMedia('(min-width: 1024px)').matches ? 'full' : 'hidden');
+    resolvePendingProfile(dnPlugin.model);
+  } else { dnGraph.stop(); dnSheet.set('hidden'); dnSpectro.release(); }
 
   const m = slot?.plugin.model;
   if (m) {
@@ -183,6 +206,8 @@ function onModelChange(d) {
   }
   if (d.kind === 'bands' || d.kind === 'settings' || d.kind === 'params') scheduleSave();
   if (currentEditor() === 'lite' && (d.kind === 'params' || d.kind === 'ab')) syncLiteBar();
+  if (d.kind === 'curves' || d.kind === 'profile') scheduleSave();
+  if (d.kind === 'learn' && d.done) { haptics.heavy(); toast.show('Профиль шума обучен — подавление включено', { short: true }); }
 }
 
 function syncHistory() {
@@ -430,6 +455,101 @@ $('#liteFab').addEventListener('click', () => {
   toast.show('Все полосы сброшены в 0 дБ', { action: { label: 'Отменить', fn: () => m.undo() } });
 });
 
+/* ---------------- Movexe DeNoise ---------------- */
+let _lastLp = -1;
+const dnPanel = new DenoisePanel($('#dnSheet'), dnSheet, {
+  toast,
+  controlStyle: prefs.controls,
+  actions: {
+    saveProfileFile() {
+      const m = currentModel();
+      if (!m?.profile) { toast.show('Профиль шума ещё не обучен'); return; }
+      const json = profileToJSON(m.profile);
+      downloadBlob(new Blob([JSON.stringify(json)], { type: 'application/json' }), `${json.name.replace(/[^\w\-а-яё ]+/gi, '_')}.noiseprint.json`);
+    },
+    async loadProfileFile(file) {
+      try {
+        const pr = profileFromJSON(JSON.parse(await file.text()));
+        currentModel().setProfile(pr);
+        toast.show(`Профиль загружен: ${pr.name}`, { short: true });
+      } catch (e) { toast.show(e.message); }
+    },
+    async learnFromFile(file) {
+      try {
+        toast.show('Анализ шума в файле…', { short: true });
+        const buf = await engine.decode(await file.arrayBuffer());
+        const m = currentModel();
+        const pr = learnFromBuffer(buf, { seconds: Math.max(2, m.params.learnSeconds), name: file.name.replace(/\.[^.]+$/, '').slice(0, 40) });
+        m.setProfile(pr);
+        m.set({ mode: m.params.adaptive ? 'adaptive' : 'reduce' }, { history: false });
+        toast.show('Профиль обучен по файлу (первые секунды — только шум)');
+      } catch (e) { toast.show(e.message || 'Не удалось прочитать аудиофайл'); }
+    }
+  }
+});
+const dnBar = new DenoiseBar($('#dnBar'), {
+  led: $('#dnLed'), grText: $('#dnGrText'), grBar: $('#dnGrBar'), inMeter: $('#dnIn'), outMeter: $('#dnOut')
+}, {
+  onLearn: () => startLearn(),
+  onMode: (mode) => {
+    const m = currentModel();
+    if (m.learnProgress >= 0) currentSlot().plugin.cancelLearn();
+    m.set({ mode, adaptive: mode === 'adaptive' });
+    haptics.tick();
+  },
+  onSettings: () => {
+    const desktop = matchMedia('(min-width: 1024px)').matches;
+    dnSheet.set(dnSheet.state !== 'hidden' && !desktop ? 'hidden' : dnSheet.isSheet ? 'peek' : 'full');
+  },
+  onZoomReset: () => { dnGraph.resetView(); dnBar.render(false); }
+});
+new SpectralEditor(dnGraph, {
+  unlock,
+  toast: (msg, o) => toast.show(msg, o),
+  openSheet: () => {},
+  zoomChanged: () => dnBar.render(dnGraph.zoomed),
+  brushMenu: (x, y) => {
+    const m = currentModel();
+    if (!m) return;
+    ctxMenu.show([
+      ...Object.entries(BRUSH_LABELS).map(([k, v]) => ({ label: 'Кисть: ' + v, checked: m.brush === k, color: m.brush === k ? '#00b4d8' : '', fn: () => m.setTool({ brush: k }) })),
+      '-',
+      ...Object.entries(TARGET_LABELS).map(([k, v]) => ({ label: v, checked: m.target === k, color: m.target === k ? (k === 'profile' ? '#ff7a3d' : '#fff') : '', fn: () => m.setTool({ target: k }) })),
+      '-',
+      { label: 'Сбросить кривую к профилю', fn: () => m.resetCurve(m.target) },
+      { label: 'Масштаб 1:1', disabled: !dnGraph.zoomed, fn: () => { dnGraph.resetView(); dnBar.render(false); } }
+    ], x, y);
+  }
+});
+
+/** Обучение шуму: при необходимости включаем микрофон. Learn: enable the mic if needed. */
+async function startLearn() {
+  const slot = currentSlot();
+  if (!slot || slot.descriptor.editor !== 'denoise') return;
+  const m = slot.plugin.model;
+  if (m.learnProgress >= 0) { slot.plugin.cancelLearn(); toast.show('Обучение остановлено', { short: true }); return; }
+  if (!engine.mic && !engine.player) {
+    try { await engine.enableMic($('#selInput').value || undefined); }
+    catch (e) { toast.show(micError(e)); return; }
+  }
+  await engine.resume();
+  try {
+    await slot.plugin.ready;
+    slot.plugin.learn();
+    haptics.select();
+    toast.show(`Обучение ${m.params.learnSeconds} с: должен звучать только шум`, { short: true });
+  } catch (e) { toast.show(e.message); }
+}
+$('#dnFab').addEventListener('click', () => startLearn());
+$('#optSpectrogram').checked = prefs.spectrogram;
+$('#dnSpectrogram').hidden = !prefs.spectrogram;
+$('#optSpectrogram').addEventListener('change', (e) => {
+  prefs.spectrogram = e.target.checked; savePrefs(prefs);
+  $('#dnSpectrogram').hidden = !prefs.spectrogram;
+  requestAnimationFrame(() => { dnSpectro.resize(); dnGraph.resize(); });
+});
+dnSheet.addEventListener('state', () => dnPanel.render());
+
 /* ---------------- нижняя панель эквалайзера / EQ bar ---------------- */
 const outKnob = new Knob('output', {
   onBegin: () => currentModel()?.begin(),
@@ -511,7 +631,7 @@ document.addEventListener('webkitfullscreenchange', () => root.classList.toggle(
 
 /* ---------------- навигация (мобильные) / navigation (mobile) ---------------- */
 function resizeGraphs() {
-  requestAnimationFrame(() => { graph.resize(); dsGraph.resize(); liteGraph.resize(); });
+  requestAnimationFrame(() => { graph.resize(); dsGraph.resize(); liteGraph.resize(); dnGraph.resize(); dnSpectro.resize(); });
 }
 function setView(v) {
   $('#app').dataset.view = v;
@@ -713,21 +833,34 @@ function uiLoop() {
   else if (engine.player) recTime.textContent = fmtDur(engine.playPosition).padStart(7, '0');
   if (currentEditor() === 'deesser') dsPanel.tick();
   if (currentEditor() === 'lite') faderBank.meters(engine);
+  if (currentEditor() === 'denoise') {
+    dnBar.meters(engine);
+    dnPanel.tick();
+    const m = currentModel();
+    const lp = m.learnProgress;
+    $('#dnFab').classList.toggle('is-learning', lp >= 0);
+    $('#dnFab .dn-ring-val').style.strokeDashoffset = String(100.5 * (1 - Math.max(0, lp)));
+    if (lp >= 0 && lp !== _lastLp) { _lastLp = lp; dnBar.render(); }
+    const pl = currentSlot().plugin;
+    if (prefs.spectrogram && engine.running && engine.hasSignal) dnSpectro.push(pl.inAnalyser, engine.sampleRate);
+  }
 }
 
 /* ---------------- пресеты / presets ---------------- */
 const CAT_LABELS = {
   Custom: 'Свои', User: 'Свои', Vocal: 'Вокал', Voice: 'Голос', Podcast: 'Подкаст', Rap: 'Рэп', Pop: 'Поп', Rock: 'Рок',
   Mix: 'Сведение', Master: 'Мастеринг', Instrument: 'Инструменты', Repair: 'Реставрация', FX: 'Эффекты',
-  Snare: 'Малый барабан', Kick: 'Бочка', Guitar: 'Гитара', Bass: 'Бас', Room: 'Комната'
+  Snare: 'Малый барабан', Kick: 'Бочка', Guitar: 'Гитара', Bass: 'Бас', Room: 'Комната',
+  HVAC: 'Вентиляция', Electrical: 'Электросеть', 'Field Recording': 'Полевая запись'
 };
 const CATEGORIES = {
   eq: ['Custom', 'Vocal', 'Podcast', 'Mix', 'Master', 'Instrument', 'Repair', 'FX'],
   deesser: ['Custom', 'Vocal', 'Podcast', 'Rap', 'Pop', 'Rock'],
-  lite: ['Custom', 'Vocal', 'Snare', 'Kick', 'Guitar', 'Bass', 'Room']
+  lite: ['Custom', 'Vocal', 'Snare', 'Kick', 'Guitar', 'Bass', 'Room'],
+  denoise: ['Custom', 'Vocal', 'Podcast', 'Room', 'HVAC', 'Electrical', 'Field Recording']
 };
 /** Тип пресетов для текущего эффекта: 'eq' | 'deesser' | 'lite'. */
-const presetKind = () => ({ deesser: 'deesser', lite: 'lite' }[currentEditor()] || 'eq');
+const presetKind = () => ({ deesser: 'deesser', lite: 'lite', denoise: 'denoise' }[currentEditor()] || 'eq');
 
 async function refreshPresets() {
   const box = $('#presetList');
@@ -772,6 +905,7 @@ $('#presetList').addEventListener('click', async (e) => {
       const m = currentModel();
       if (!m) { toast.show('В цепочке нет эффекта'); return; }
       if (isEq(m)) m.loadJSON(p.eq); else m.loadJSON(p);
+      if (currentEditor() === 'denoise') await resolvePendingProfile(m);
       presetName = p.name;
       $('#presetName').textContent = presetName;
       $('#presetNameInput').value = p.factory ? '' : p.name;
@@ -798,12 +932,44 @@ function currentPreset(name, category) {
   return { name, author: 'User', category, plugin: presetKind(), version: 1, ...state };
 }
 
+/**
+ * Пресет шумоподавителя: тяжёлый профиль шума хранится отдельно (/api/noise-profiles),
+ * в пресете — только его id. Офлайн профиль встраивается прямо в пресет.
+ * Denoiser preset: the heavy noise print is stored separately; the preset keeps its id.
+ */
+async function denoisePresetForSave(preset) {
+  const m = currentModel();
+  const { profile, ...rest } = preset;
+  if (!m.profile) return { ...rest, noiseProfile: null };
+  if (m.profile.id && !String(m.profile.id).startsWith('local-')) return { ...rest, noiseProfile: m.profile.id };
+  try {
+    const saved = await presets.saveNoiseProfile(profileToJSON({ ...m.profile, name: `${preset.name} — шум` }));
+    m.profile.id = saved.id;
+    return { ...rest, noiseProfile: saved.id, ...(saved.local ? { profile } : {}) };
+  } catch (e) {
+    return { ...rest, noiseProfile: null, profile }; // не удалось — встраиваем / embed on failure
+  }
+}
+
+/** Догрузить профиль шума по id из пресета / fetch the noise print referenced by a preset. */
+async function resolvePendingProfile(m) {
+  const id = m?.pendingProfileId;
+  if (!id) return;
+  m.pendingProfileId = null;
+  try {
+    const pr = profileFromJSON(await presets.getNoiseProfile(id));
+    pr.id = id;
+    m.setProfile(pr, { history: false });
+  } catch (e) { toast.show('Профиль шума из пресета не найден: ' + e.message); }
+}
+
 $('#presetSave').addEventListener('submit', async (e) => {
   e.preventDefault();
   const name = $('#presetNameInput').value.trim();
-  const preset = currentPreset(name, $('#presetCategory').value);
+  let preset = currentPreset(name, $('#presetCategory').value);
   if (!name || !preset) return;
   try {
+    if (preset.plugin === 'denoise') preset = await denoisePresetForSave(preset);
     const saved = await presets.save(preset);
     presetName = saved.name;
     $('#presetName').textContent = presetName;
@@ -854,16 +1020,16 @@ bindOpt('#optLinQ', () => prefs.linearQuality, (v) => {
   prefs.linearQuality = v;
   engine?.chain.slots.forEach((s) => { const m = s.plugin.model; if (isEq(m)) { m.settings.linearQuality = v; if (m.settings.mode === 'linear') s.plugin._scheduleFir(0); } });
 });
-bindOpt('#optControls', () => prefs.controls, (v) => { prefs.controls = v; panel.setControlStyle(v); dsPanel.setControlStyle(v); });
+bindOpt('#optControls', () => prefs.controls, (v) => { prefs.controls = v; panel.setControlStyle(v); dsPanel.setControlStyle(v); dnPanel.setControlStyle(v); });
 bindOpt('#optTheme', () => prefs.theme, (v) => {
   prefs.theme = v; applyTheme();
-  requestAnimationFrame(() => { graph.refreshTheme(); dsGraph.refreshTheme(); liteGraph.refreshTheme(); });
+  requestAnimationFrame(() => { graph.refreshTheme(); dsGraph.refreshTheme(); liteGraph.refreshTheme(); dnGraph.refreshTheme(); });
 });
 bindOpt('#optHaptics', () => prefs.haptics, (v) => { prefs.haptics = v; haptics.enabled = v; haptics.select(); });
 bindOpt('#optLowPower', () => prefs.lowPower, (v) => {
   prefs.lowPower = v;
   root.classList.toggle('low-power', v);
-  graph.lowPower = dsGraph.lowPower = liteGraph.lowPower = v;
+  graph.lowPower = dsGraph.lowPower = liteGraph.lowPower = dnGraph.lowPower = v;
   resizeGraphs();
 });
 liteSheet.addEventListener('state', () => litePanel.render());
@@ -873,6 +1039,13 @@ $('#btnResetAll').addEventListener('click', () => {
   if (!m) return;
   if (isEq(m)) { if (!m.bands.length) return; m.resetAll(); }
   else if (currentEditor() === 'lite') m.resetAll();
+  else if (currentEditor() === 'denoise') {
+    m.begin();
+    const { bypass, freeze, mode, learnSeconds, ...rest } = m.params; void bypass; void freeze; void mode; void learnSeconds;
+    const def = {}; for (const k of Object.keys(rest)) def[k] = DN_RESET[k];
+    m.set(def); m.setCurve('reduction', null); m.setCurve('profile', null);
+    m.commit();
+  }
   else { const { audition, bypass, ...rest } = m.params; void audition; void bypass; m.reset(Object.keys(rest)); }
   drawer.close();
   toast.show('Эффект сброшен', { action: { label: 'Отменить', fn: () => m.undo() } });
@@ -890,6 +1063,11 @@ document.addEventListener('keydown', (e) => {
   if (mod && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? m.redo() : m.undo(); return; }
   if (mod && e.key.toLowerCase() === 'y') { e.preventDefault(); m.redo(); return; }
   if (e.key === 'Escape') { ctxMenu.hide(); drawer.close(); }
+  if (currentEditor() === 'denoise') {
+    if (e.key === 'b' || e.key === 'B') m.set({ bypass: !m.params.bypass }, { history: false });
+    if (e.key === 'l' || e.key === 'L') startLearn();
+    return;
+  }
   if (currentEditor() === 'lite') {
     if (e.key === 'b' || e.key === 'B') m.set({ bypass: !m.params.bypass }, { history: false });
     return;
@@ -954,4 +1132,4 @@ uiLoop();
 if (location.protocol === 'file:') toast.show('Откройте через http(s):// — ES-модули и микрофон не работают с file://');
 
 // Для отладки из консоли / for console debugging
-window.proeq = { engine, graph, dsGraph, liteGraph, recorder, presets, get model() { return currentModel(); } };
+window.proeq = { engine, graph, dsGraph, liteGraph, dnGraph, recorder, presets, get model() { return currentModel(); } };

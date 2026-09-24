@@ -1,0 +1,60 @@
+{
+  "presets": [
+    {
+      "id": "podcast-studio",
+      "name": "Подкаст-студия",
+      "author": "Factory",
+      "category": "Podcast",
+      "plugin": "denoise"
+    },
+    {
+      "id": "vocal-clean",
+      "name": "Чистый вокал",
+      "author": "Factory",
+      "category": "Vocal",
+      "plugin": "denoise"
+    },
+    {
+      "id": "room-tone",
+      "name": "Комнатный шум",
+      "author": "Factory",
+      "category": "Room",
+      "plugin": "denoise"
+    },
+    {
+      "id": "hvac",
+      "name": "Кондиционер",
+      "author": "Factory",
+      "category": "HVAC",
+      "plugin": "denoise"
+    },
+    {
+      "id": "hum-50",
+      "name": "Гул 50 Гц",
+      "author": "Factory",
+      "category": "Electrical",
+      "plugin": "denoise"
+    },
+    {
+      "id": "hum-60",
+      "name": "Гул 60 Гц",
+      "author": "Factory",
+      "category": "Electrical",
+      "plugin": "denoise"
+    },
+    {
+      "id": "field-street",
+      "name": "Полевая запись: улица",
+      "author": "Factory",
+      "category": "Field Recording",
+      "plugin": "denoise"
+    },
+    {
+      "id": "fan-noise",
+      "name": "Вентилятор компьютера",
+      "author": "Factory",
+      "category": "Room",
+      "plugin": "denoise"
+    }
+  ]
+}

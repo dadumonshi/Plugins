@@ -232,7 +232,6 @@ svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; 
   transform: scaleX(0);
   background: linear-gradient(90deg, #2fd27f 0%, #2fd27f 70%, #f5c518 85%, #ff4d4d 100%);
   background-size: 100% 100%;
-  will-change: transform;
 }
 .meter b { display: none; }
 .meter.is-clip { box-shadow: inset 0 0 0 1px var(--rec); }
@@ -298,6 +297,8 @@ svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; 
 
 .graph-wrap {
   position: relative;
+  background: var(--graph-bg);   /* под canvas всегда тёмный фон / dark under canvases */
+  contain: layout paint;         /* перерисовка графика не затрагивает остальную страницу */
   flex: 1 1 auto;
   /* Минимальная высота графика 45dvh (динамический viewport) / min graph height */
   min-height: 45vh;
@@ -331,7 +332,11 @@ svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; 
 .node.is-selected .node-dot { stroke: #fff; stroke-width: 2.5; }
 .node.is-selected .node-halo { opacity: 0.22; }
 /* Свечение (drop-shadow) — отключается в low-power / glow disabled in low-power */
-.node.is-selected, .node.is-drag { filter: drop-shadow(0 0 6px var(--c)); }
+/* Свечение узла — через полупрозрачный ореол, а НЕ css filter: фильтры на SVG при каждом
+   касании пересоздают GPU-слой, на мобильных это давало белые вспышки экрана.
+   Node glow uses the halo circle, NOT a CSS filter: filters on SVG rebuild a GPU layer on
+   every touch, which caused white screen flashes on mobile. */
+.node.is-selected .node-halo, .node.is-drag .node-halo { opacity: 0.32; }
 .node.is-hover .node-halo { opacity: 0.18; }
 .node.is-drag .node-dot { transform: scale(1.25); } /* увеличение при касании / grow on touch (центр узла = 0,0) */
 .node.is-drag .node-halo { opacity: 0.3; }
@@ -579,7 +584,12 @@ svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; 
   border-top: 3px solid var(--band, var(--accent));
   transform: translateY(calc(100% + 20px));
   transition: transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
-  will-change: transform;
+}
+.sheet, .drawer {
+  /* iOS/Android: без этого при анимации transform слой может мигнуть белым.
+     Prevents a white blink of the layer during transform animations. */
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
 }
 .sheet[data-state="peek"] { transform: translateY(calc(100% - var(--peek-h))); }
 .sheet[data-state="full"] { transform: translateY(0); }
@@ -686,7 +696,7 @@ svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; 
 .chip-btn:disabled { opacity: 0.35; }
 .chip-btn.is-accent { background: var(--accent); color: var(--accent-ink); }
 .chip-btn.is-danger { color: var(--danger); }
-.chip-btn:active:not(:disabled) { filter: brightness(1.2); }
+.chip-btn:active:not(:disabled) { background: var(--bg3); } /* без filter — см. выше / no filter */
 
 /* ================= Рэк / Rack ================= */
 .rack {
@@ -927,22 +937,26 @@ svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; 
 }
 
 /* ================= Переключение редакторов / Editor switching ================= */
-.eq-editor, .ds-editor, .lite-editor {
+.eq-editor, .ds-editor, .lite-editor, .dn-editor {
   flex: 1 1 auto;
   min-height: 0;
   display: flex;
   flex-direction: column;
 }
-.app[data-editor="deesser"] .eq-editor,
-.app[data-editor="lite"] .eq-editor,
+/* EQ 24 виден только в своём редакторе или когда цепочка пуста (подсказка «добавьте эффект»).
+   EQ 24 shows only in its own editor or when the chain is empty. */
+.app:not([data-editor="eq"]):not([data-editor="none"]) .eq-editor,
 .app:not([data-editor="deesser"]) .ds-editor,
-.app:not([data-editor="lite"]) .lite-editor { display: none; }
+.app:not([data-editor="lite"]) .lite-editor,
+.app:not([data-editor="denoise"]) .dn-editor { display: none; }
 .app:not([data-editor="eq"]) .eq-sheet,
 .app:not([data-editor="deesser"]) .ds-sheet,
-.app:not([data-editor="lite"]) .lite-sheet { display: none; }
+.app:not([data-editor="lite"]) .lite-sheet,
+.app:not([data-editor="denoise"]) .dn-sheet { display: none; }
 .app:not([data-editor="eq"]) .help-eq,
 .app:not([data-editor="deesser"]) .help-ds,
-.app:not([data-editor="lite"]) .help-lite { display: none; }
+.app:not([data-editor="lite"]) .help-lite,
+.app:not([data-editor="denoise"]) .help-dn { display: none; }
 
 /* ================= Movexe DeEss ================= */
 .ds-stage { flex: 1 1 auto; min-height: 0; display: flex; }
@@ -954,7 +968,7 @@ svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; 
 
 .ds-side {
   flex: none;
-  width: 64px;
+  width: 76px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -985,11 +999,10 @@ svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; 
   background: linear-gradient(0deg, #2fd27f 0%, #2fd27f 70%, #f5c518 85%, #ff4d4d 100%);
   transform-origin: bottom center;
   transform: scaleY(0);
-  will-change: transform;
 }
 .vmeter-gr { width: 16px; }
 .vmeter-gr canvas { position: absolute; left: 0; right: 0; top: 0; bottom: 14px; width: 100%; height: calc(100% - 14px); border-radius: 3px; }
-.vmeter b { position: absolute; bottom: 0; left: 50%; transform: translateX(-50%); font-size: 9px; color: var(--muted); font-weight: 700; }
+.vmeter b { position: absolute; bottom: 0; left: 50%; transform: translateX(-50%); font-size: 8px; letter-spacing: -0.02em; color: var(--muted); font-weight: 700; white-space: nowrap; }
 .ds-history {
   flex: none;
   display: block;
@@ -1190,3 +1203,81 @@ svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; 
 @media (orientation: portrait) and (max-height: 720px) {
   .lite-wrap { height: 30dvh; min-height: 120px; }
 }
+
+/* ================= Movexe DeNoise ================= */
+.dn-wrap { flex: 1 1 auto; min-height: 45vh; min-height: 45dvh; }
+.dn-taps { cursor: crosshair; }
+.dn-wrap.is-bypassed .dn-main { opacity: 0.5; }
+.dn-point .node-dot { fill: var(--c); stroke: #fff; stroke-width: 2.5; }
+.dn-point .node-halo { opacity: 0.3; }
+.dn-point .node-hit { fill: transparent; stroke: none; }
+
+/* FAB «Learn» с кольцом прогресса / Learn FAB with a progress ring */
+.dn-fab {
+  width: 64px; height: 64px;
+  border-radius: 50%;
+  background: #e8442e;
+  color: #fff;
+  font: 800 13px var(--sans);
+  bottom: 16px;
+}
+.dn-fab span { position: relative; z-index: 1; }
+.fab.dn-fab .dn-ring { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); } /* перебивает .fab svg */
+.dn-ring circle { fill: none; stroke: rgba(255, 255, 255, 0.25); stroke-width: 3; }
+.dn-ring .dn-ring-val { stroke: #fff; stroke-dasharray: 100.5; stroke-dashoffset: 100.5; transition: stroke-dashoffset 0.15s linear; }
+.dn-fab.is-learning { background: #b3261e; }
+
+.dn-learnbar {
+  position: absolute;
+  left: 50%; top: 30px;
+  transform: translateX(-50%);
+  width: min(420px, calc(100% - 24px));
+  padding: 8px 12px 10px;
+  border-radius: 12px;
+  background: rgba(10, 10, 10, 0.88);
+  color: #fff;
+  font-size: 14px;
+  text-align: center;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  z-index: 5;
+}
+.dn-learnbar.is-on { opacity: 1; }
+.dn-learnbar i { display: block; height: 6px; margin-bottom: 6px; border-radius: 3px; background: #e8442e; transform-origin: left center; transform: scaleX(0); }
+
+.vmeter-dngr i {
+  transform-origin: top center;
+  background: linear-gradient(180deg, #ffb347 0%, #ff3b30 100%);
+}
+
+.dn-spectrogram {
+  flex: none;
+  display: block;
+  width: 100%;
+  height: 72px;
+  background: #0a0a0e;
+  border-top: 1px solid var(--line);
+}
+.dn-spectrogram[hidden] { display: none; }
+
+.dn-modes-big { display: flex; gap: 6px; }
+/* Крупные «Обучение» и «Подавление» — всегда под рукой / big, always reachable */
+.dn-big {
+  min-width: 64px;
+  min-height: 52px;
+  padding: 0 12px;
+  border-radius: 12px;
+  background: var(--bg2);
+  font-weight: 800;
+  font-size: 14px;
+  color: var(--muted);
+  transition: background 0.2s ease, color 0.2s ease;
+}
+.dn-big.is-on { background: var(--ds); color: #031219; }
+.dn-big[data-mode="learn"].is-on { background: #e8442e; color: #fff; }
+.dn-bar .seg button.is-on { box-shadow: inset 0 0 0 1px var(--ds); color: var(--text); }
+.dn-bar .seg button[data-brush] { font-size: 18px; min-width: 44px; }
+.dn-sheet { border-top-color: var(--ds); --band: var(--ds); }
+.dn-knobs { grid-template-columns: repeat(3, minmax(0, 1fr)); row-gap: 12px; }
+.dn-learnsec select { min-height: 40px; border: 0; border-radius: 10px; background: var(--bg2); padding: 0 8px; font-size: 16px; color: var(--text); }

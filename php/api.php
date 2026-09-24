@@ -8,6 +8,9 @@
  *   PUT    /api/presets/{id}      — обновить / update
  *   DELETE /api/presets/{id}      — удалить / delete
  *   GET    /api/presets/export    — экспорт всех пользовательских / export all user presets
+ *   GET    /api/noise-profiles    — список профилей шума / noise prints list
+ *   POST   /api/noise-profiles    — сохранить профиль шума / store a noise print
+ *   GET    /api/noise-profiles/{id}, DELETE /api/noise-profiles/{id}
  *   POST   /api/presets/import    — импорт пресета или пакета / import a preset or bundle
  *
  * Маршрут берётся из PATH_INFO (php/api.php/presets/..), ?route=presets/.. или REQUEST_URI (/api/..).
@@ -54,8 +57,9 @@ if ($route === '') {
 // Встроенный сервер PHP кладёт в PATH_INFO полный путь «/api/…» / built-in server puts "/api/…" in PATH_INFO
 $route = (string)preg_replace('#^/?api/#', '', (string)$route);
 $parts = array_values(array_filter(explode('/', trim((string)$route, '/')), 'strlen'));
-if (($parts[0] ?? '') !== 'presets' || count($parts) > 2) {
-    respond(404, ['error' => 'Unknown endpoint. Use /api/presets']);
+$resource = $parts[0] ?? '';
+if (!in_array($resource, ['presets', 'noise-profiles'], true) || count($parts) > 2) {
+    respond(404, ['error' => 'Unknown endpoint. Use /api/presets or /api/noise-profiles']);
 }
 $id = isset($parts[1]) ? rawurldecode($parts[1]) : null;
 
@@ -69,6 +73,20 @@ function body(): array
 }
 
 try {
+    /* ---------- профили шума / noise prints ---------- */
+    if ($resource === 'noise-profiles') {
+        $np = new NoiseProfileStorage(dirname(__DIR__) . '/noise-profiles');
+        if ($id === null) {
+            if ($method === 'GET') { respond(200, ['profiles' => $np->all()]); }
+            if ($method === 'POST') { respond(201, ['profile' => $np->create(body())]); }
+            respond(405, ['error' => 'Method not allowed']);
+        }
+        if (!PresetStorage::validId($id)) { respond(400, ['error' => 'Invalid profile id']); }
+        if ($method === 'GET') { respond(200, ['profile' => $np->get($id)]); }
+        if ($method === 'DELETE') { $np->delete($id); respond(200, ['deleted' => $id]); }
+        respond(405, ['error' => 'Method not allowed']);
+    }
+
     $store = new PresetStorage(dirname(__DIR__) . '/presets');
 
     if ($id === null) {

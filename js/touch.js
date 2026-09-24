@@ -250,3 +250,21 @@ export const haptics = {
     try { navigator.vibrate(p); } catch { /* noop */ }
   }
 };
+
+/**
+ * Плотность пикселей canvas. На телефонах ограничиваем 2× (DPR 3 даёт в 2,25 раза больше
+ * памяти GPU без видимой разницы; нехватка памяти GPU на мобильных = белые вспышки экрана).
+ * Canvas pixel density. Phones are capped at 2× (DPR 3 costs 2.25× the GPU memory with no
+ * visible gain; running out of GPU memory on mobile shows up as white screen flashes).
+ */
+export function canvasDpr(lowPower = false) {
+  const d = window.devicePixelRatio || 1;
+  if (lowPower) return Math.min(d, 1.5);
+  const coarse = window.matchMedia && matchMedia('(pointer: coarse)').matches;
+  return Math.min(d, coarse ? 2 : 2.5);
+}
+
+/** Освободить память canvas (скрытый редактор) / free a hidden canvas's backing store. */
+export function releaseCanvas(c) {
+  if (c && (c.width > 1 || c.height > 1)) { c.width = 1; c.height = 1; }
+}

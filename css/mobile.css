@@ -5,7 +5,7 @@
 
 /* ============ 320px: самые узкие экраны (iPhone SE 1-го поколения) ============ */
 @media (max-width: 359px) {
-  .ds-side { width: 54px; }
+  .ds-side { width: 62px; }
   .lite-meter { display: none; }       /* на 320px вся ширина — фейдерам / all width to faders */
   .lite-mode button { padding: 0 6px; }
   .ds-quick { padding: 0 7px; font-size: 12px; }
@@ -185,7 +185,7 @@
   }
   .sheet[data-state="hidden"] .band-body, .sheet[data-state="hidden"] .band-head { visibility: hidden; }
   .sheet[data-state="hidden"]::after {
-    content: "Выберите полосу · Select a band";
+    content: "Выберите полосу";
     position: absolute; inset: 0;
     display: grid; place-items: center;
     color: var(--muted); font-size: 14px; text-align: center; padding: 16px;
@@ -196,9 +196,14 @@
   .lite-wrap { height: 30dvh; min-height: 100px; }
   /* Lite: фейдерам — вся ширина; настройки выезжают сбоку только по кнопке.
      Lite: faders get the full width; settings slide in only on demand. */
-  .app[data-editor="lite"][data-view="eq"] .editor { right: 0; }
-  .lite-sheet[data-state="hidden"] { display: none; }
-  .lite-sheet { box-shadow: var(--shadow); z-index: 40; }
+  .app[data-editor="lite"][data-view="eq"] .editor,
+  .app[data-editor="denoise"][data-view="eq"] .editor { right: 0; }
+  .dn-wrap { min-height: 0; }
+  .dn-big { min-height: 40px; }
+  .dn-fab { width: 52px; height: 52px; }
+  .dn-spectrogram { height: 48px; }
+  .lite-sheet[data-state="hidden"], .dn-sheet[data-state="hidden"] { display: none; }
+  .lite-sheet, .dn-sheet { box-shadow: var(--shadow); z-index: 40; }
   .lite-bank { min-height: 100px; }
   .lite-inout { width: 64px; height: 44px; }
   .lite-bar { padding: 4px 6px; gap: 6px; }
@@ -219,7 +224,6 @@
 /* ============ Экономный режим / Low-power mode ============
    Отключаем тяжёлые эффекты: blur, тени, drop-shadow, анимации.
    Disables heavy effects: blur, shadows, drop-shadow, animations. */
-.low-power .node.is-selected, .low-power .node.is-drag { filter: none; }
 .low-power .sheet, .low-power .fab, .low-power .toast, .low-power .ctx-list,
 .low-power .drawer, .low-power .g-loupe canvas { box-shadow: none; }
 .low-power .band-dot { box-shadow: none; }
@@ -227,7 +231,6 @@
 .low-power .rec-btn.is-on i { animation: none; }
 
 @media (prefers-reduced-motion: reduce) {
-  .node.is-selected, .node.is-drag { filter: none; }
   .sheet, .drawer, .fab { transition: none; }
 }
 

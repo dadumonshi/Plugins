@@ -8,7 +8,7 @@
  *   • /api/* — только сеть (при офлайне клиент сам уходит в localStorage).
  *     /api/* — network only (the client falls back to localStorage when offline).
  */
-const VERSION = 'movexe-v3.0.0';
+const VERSION = 'movexe-v4.0.0';
 const SHELL = [
   './',
   'index.html',
@@ -23,21 +23,30 @@ const SHELL = [
   'js/audio.js',
   'js/deesser-ui.js',
   'js/deesser.js',
+  'js/denoise-graph.js',
+  'js/denoise-ui.js',
+  'js/denoiser.js',
   'js/detection.js',
   'js/dsp.js',
   'js/eq.js',
+  'js/fft.js',
   'js/fir-worker.js',
   'js/fx-chain.js',
   'js/gestures.js',
   'js/graph.js',
+  'js/learn.js',
   'js/mobile-ui.js',
   'js/presets.js',
   'js/proportionalq.js',
   'js/recorder.js',
+  'js/spectral-editor.js',
+  'js/spectral.js',
+  'js/spectrogram.js',
   'js/spectrum.js',
   'js/touch.js',
   'js/ui.js',
   'js/worklets/deesser-worklet.js',
+  'js/worklets/denoise-worklet.js',
   'js/worklets/recorder-worklet.js',
   'icons/apple-touch-icon.png',
   'icons/icon-192.png',
@@ -65,6 +74,15 @@ const SHELL = [
   'presets/deesser/vocal-bright.json',
   'presets/deesser/vocal-female.json',
   'presets/deesser/vocal-male.json',
+  'presets/denoise/fan-noise.json',
+  'presets/denoise/field-street.json',
+  'presets/denoise/hum-50.json',
+  'presets/denoise/hum-60.json',
+  'presets/denoise/hvac.json',
+  'presets/denoise/index.json',
+  'presets/denoise/podcast-studio.json',
+  'presets/denoise/room-tone.json',
+  'presets/denoise/vocal-clean.json',
   'presets/lite/bass-growl.json',
   'presets/lite/guitar-bright.json',
   'presets/lite/guitar-warm.json',
@@ -75,7 +93,15 @@ const SHELL = [
   'presets/lite/snare-crack.json',
   'presets/lite/snare-fat.json',
   'presets/lite/vocal-air.json',
-  'presets/lite/vocal-presence.json'
+  'presets/lite/vocal-presence.json',
+  'noise-profiles/fan.json',
+  'noise-profiles/hiss.json',
+  'noise-profiles/hum-50.json',
+  'noise-profiles/hum-60.json',
+  'noise-profiles/hvac.json',
+  'noise-profiles/index.json',
+  'noise-profiles/room.json',
+  'noise-profiles/street.json'
 ];
 
 self.addEventListener('install', (e) => {

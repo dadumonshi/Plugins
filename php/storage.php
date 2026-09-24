@@ -208,11 +208,157 @@ final class LiteValidator
     }
 }
 
+/**
+ * Валидатор пресетов Movexe DeNoise / Movexe DeNoise preset validator.
+ * Тяжёлый профиль шума хранится отдельно (noise-profiles/), в пресете — его id
+ * (или встроенный "profile", если сервер был недоступен при сохранении).
+ */
+final class DenoiseValidator
+{
+    public const CATEGORIES = ['Vocal', 'Podcast', 'Room', 'HVAC', 'Electrical', 'Field Recording', 'Custom'];
+    public const NUM = [
+        'reduction' => [0, 40, 18], 'threshold' => [-80, 0, -70], 'attack' => [0.1, 100, 5], 'release' => [10, 1000, 150],
+        'smoothing' => [0, 100, 50], 'highCut' => [0, 100, 0], 'lowCut' => [0, 100, 0], 'artifactControl' => [0, 100, 60],
+        'tone' => [0, 100, 20], 'stereoLink' => [0, 100, 100], 'mix' => [0, 100, 100], 'outputGain' => [-12, 12, 0],
+        'learnSeconds' => [2, 5, 3],
+    ];
+    public const ENUM = [
+        'mode' => ['reduce', 'adaptive', 'learn', 'broadband', 'spectral', 'hybrid'],
+        'algorithm' => ['broadband', 'spectral', 'hybrid'],
+        'frequencyRange' => ['low', 'mid', 'high', 'full'],
+        'channelMode' => ['stereo', 'mid-side', 'left-right', 'mono'],
+    ];
+
+    public static function clean(array $in): array
+    {
+        $errors = [];
+        $name = isset($in['name']) && is_string($in['name']) ? trim($in['name']) : '';
+        if ($name === '' || mb_strlen($name) > 64) { $errors[] = 'name: required, 1–64 chars'; }
+        $out = ['name' => $name, 'author' => mb_substr(trim(strip_tags((string)($in['author'] ?? 'User'))), 0, 40),
+            'category' => in_array($in['category'] ?? '', self::CATEGORIES, true) ? $in['category'] : 'Custom',
+            'plugin' => 'denoise', 'version' => 1];
+        foreach (self::NUM as $k => [$min, $max, $def]) {
+            $v = $in[$k] ?? $def;
+            if (!is_numeric($v) || (float)$v < $min || (float)$v > $max) { $errors[] = "$k: number in [$min, $max]"; continue; }
+            $out[$k] = round((float)$v, 3);
+        }
+        foreach (self::ENUM as $k => $list) {
+            $v = $in[$k] ?? $list[0];
+            if (!in_array($v, $list, true)) { $errors[] = "$k: one of " . implode('|', $list); continue; }
+            $out[$k] = $v;
+        }
+        // Структура из ТЗ: mode может быть алгоритмом / spec structure: mode may be an algorithm
+        if (in_array($out['mode'] ?? '', self::ENUM['algorithm'], true)) { $out['algorithm'] = $out['mode']; $out['mode'] = 'reduce'; }
+        if (($out['mode'] ?? '') === 'learn') { $out['mode'] = 'reduce'; }
+        $out['adaptive'] = (bool)($in['adaptive'] ?? false);
+        foreach (['reductionCurve', 'profileOffset'] as $k) {
+            $c = $in[$k] ?? null;
+            if ($c === null) { $out[$k] = null; continue; }
+            if (!is_array($c) || count($c) !== 96) { $errors[] = "$k: null or 96 values"; continue; }
+            $out[$k] = array_map(fn($v) => $v === null ? null : max(-60, min(60, round((float)$v, 1))), array_values($c));
+        }
+        $np = $in['noiseProfile'] ?? null;
+        $out['noiseProfile'] = is_string($np) && preg_match('/^[a-z0-9][a-z0-9\-]{0,63}$/', $np) ? $np : null;
+        if (isset($in['profile']) && is_array($in['profile'])) { $out['profile'] = NoiseProfileStorage::cleanProfile($in['profile']); }
+        if ($errors) { throw new ValidationException(implode('; ', $errors)); }
+        return $out;
+    }
+}
+
+/**
+ * Хранилище профилей шума (noise prints): /noise-profiles/*.json (заводские, только чтение)
+ * и /noise-profiles/user/*.json. Массивы тяжёлые (1025 бинов), поэтому отдельно от пресетов.
+ * Noise print storage, kept apart from presets because the arrays are heavy.
+ */
+final class NoiseProfileStorage
+{
+    private string $dir;
+    private string $userDir;
+
+    public function __construct(string $root)
+    {
+        $this->dir = rtrim($root, '/');
+        $this->userDir = $this->dir . '/user';
+        if (!is_dir($this->userDir) && !@mkdir($this->userDir, 0775, true) && !is_dir($this->userDir)) {
+            throw new RuntimeException('Cannot create noise profile directory');
+        }
+    }
+
+    /** Проверка и нормализация профиля / validate & normalise a profile. */
+    public static function cleanProfile(array $in): array
+    {
+        $n = (int)($in['fftSize'] ?? 0);
+        $fs = (int)($in['sampleRate'] ?? 0);
+        $bins = $in['bins'] ?? null;
+        if ($n < 256 || $n > 32768 || ($n & ($n - 1))) { throw new ValidationException('fftSize: power of two 256…32768'); }
+        if ($fs < 8000 || $fs > 192000) { throw new ValidationException('sampleRate: 8000…192000'); }
+        if (!is_array($bins) || count($bins) !== intdiv($n, 2) + 1) { throw new ValidationException('bins: fftSize/2+1 numbers required'); }
+        $clean = [];
+        foreach ($bins as $v) {
+            if (!is_numeric($v)) { throw new ValidationException('bins: numbers only'); }
+            $clean[] = max(-160, min(40, round((float)$v, 1)));
+        }
+        $name = isset($in['name']) && is_string($in['name']) ? mb_substr(trim(strip_tags($in['name'])), 0, 64) : 'Профиль шума';
+        return ['format' => 'movexe-noise-print', 'version' => 1, 'name' => $name ?: 'Профиль шума',
+            'sampleRate' => $fs, 'fftSize' => $n, 'bins' => $clean];
+    }
+
+    private function read(string $f): ?array
+    {
+        $raw = @file_get_contents($f);
+        $d = $raw === false ? null : json_decode($raw, true);
+        return is_array($d) ? $d : null;
+    }
+
+    public function all(): array
+    {
+        $out = [];
+        foreach ([[$this->dir, true], [$this->userDir, false]] as [$dir, $factory]) {
+            foreach (glob($dir . '/*.json') ?: [] as $f) {
+                if (basename($f) === 'index.json') { continue; }
+                $p = $this->read($f);
+                if ($p) { $out[] = ['id' => basename($f, '.json'), 'name' => $p['name'] ?? '', 'factory' => $factory, 'fftSize' => $p['fftSize'] ?? 0, 'sampleRate' => $p['sampleRate'] ?? 0]; }
+            }
+        }
+        return $out;
+    }
+
+    public function get(string $id): array
+    {
+        if (!PresetStorage::validId($id) || $id === 'index') { throw new NotFoundException('Noise profile not found'); }
+        foreach ([[$this->userDir, false], [$this->dir, true]] as [$dir, $factory]) {
+            $p = is_file("$dir/$id.json") ? $this->read("$dir/$id.json") : null;
+            if ($p) { $p['id'] = $id; $p['factory'] = $factory; return $p; }
+        }
+        throw new NotFoundException('Noise profile not found');
+    }
+
+    public function create(array $in): array
+    {
+        $p = self::cleanProfile($in);
+        $p['created'] = gmdate('c');
+        $id = 'np-' . bin2hex(random_bytes(6));
+        $tmp = "{$this->userDir}/$id.json." . bin2hex(random_bytes(3)) . '.tmp';
+        if (file_put_contents($tmp, json_encode($p, JSON_UNESCAPED_UNICODE)) === false || !rename($tmp, "{$this->userDir}/$id.json")) {
+            @unlink($tmp);
+            throw new RuntimeException('Write failed');
+        }
+        return $this->get($id);
+    }
+
+    public function delete(string $id): void
+    {
+        $p = $this->get($id);
+        if (!empty($p['factory'])) { throw new ForbiddenException('Factory noise profiles are read-only'); }
+        if (!@unlink("{$this->userDir}/$id.json")) { throw new RuntimeException('Delete failed'); }
+    }
+}
+
 /** Тип пресета по содержимому / preset kind by content. */
 function preset_kind(array $p): string
 {
     $k = $p['plugin'] ?? '';
-    return in_array($k, ['deesser', 'lite'], true) ? $k : 'eq';
+    return in_array($k, ['deesser', 'lite', 'denoise'], true) ? $k : 'eq';
 }
 
 final class PresetStorage
@@ -225,7 +371,7 @@ final class PresetStorage
     public function __construct(string $root)
     {
         $this->factoryDir = rtrim($root, '/');
-        $this->factoryDirs = ['eq' => $this->factoryDir, 'deesser' => $this->factoryDir . '/deesser', 'lite' => $this->factoryDir . '/lite'];
+        $this->factoryDirs = ['eq' => $this->factoryDir, 'deesser' => $this->factoryDir . '/deesser', 'lite' => $this->factoryDir . '/lite', 'denoise' => $this->factoryDir . '/denoise'];
         $this->userDir = $this->factoryDir . '/user';
         if (!is_dir($this->userDir) && !@mkdir($this->userDir, 0775, true) && !is_dir($this->userDir)) {
             throw new RuntimeException('Cannot create user preset directory');
@@ -286,7 +432,7 @@ final class PresetStorage
     /** Список (только метаданные) для типа / list (metadata only) for a kind. */
     public function all(string $kind = 'eq'): array
     {
-        $kind = in_array($kind, ['deesser', 'lite'], true) ? $kind : 'eq';
+        $kind = in_array($kind, ['deesser', 'lite', 'denoise'], true) ? $kind : 'eq';
         $out = [];
         foreach (glob($this->factoryDirs[$kind] . '/*.json') ?: [] as $f) {
             if (basename($f) === 'index.json') { continue; }
@@ -304,7 +450,7 @@ final class PresetStorage
     public function get(string $id): array
     {
         if (!self::validId($id) || $id === 'index') { throw new NotFoundException('Preset not found'); }
-        $dirs = [[$this->userDir, false, null], [$this->factoryDirs['eq'], true, 'eq'], [$this->factoryDirs['deesser'], true, 'deesser'], [$this->factoryDirs['lite'], true, 'lite']];
+        $dirs = [[$this->userDir, false, null], [$this->factoryDirs['eq'], true, 'eq'], [$this->factoryDirs['deesser'], true, 'deesser'], [$this->factoryDirs['lite'], true, 'lite'], [$this->factoryDirs['denoise'], true, 'denoise']];
         foreach ($dirs as [$dir, $factory, $kind]) {
             $f = "$dir/$id.json";
             if (is_file($f)) {
@@ -326,6 +472,7 @@ final class PresetStorage
         switch (preset_kind($input)) {
             case 'deesser': return DeEssValidator::clean($input);
             case 'lite': return LiteValidator::clean($input);
+            case 'denoise': return DenoiseValidator::clean($input);
             default: return PresetValidator::clean($input);
         }
     }

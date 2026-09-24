@@ -10,6 +10,7 @@
  *   справа (голубая) — усиление обработки, дБ (0 … −30).
  */
 import { SpectrumAnalyzer } from './spectrum.js';
+import { canvasDpr, releaseCanvas } from './touch.js';
 import { designFilters, detectionResponseDb, processingGainDb } from './detection.js';
 
 const SVGNS = 'http://www.w3.org/2000/svg';
@@ -113,7 +114,7 @@ export class DeEssGraph {
   resize() {
     const r = this.wrap.getBoundingClientRect();
     const w = Math.max(10, Math.round(r.width)), h = Math.max(10, Math.round(r.height));
-    const dpr = Math.min(window.devicePixelRatio || 1, this.lowPower ? 1.5 : 2.5);
+    const dpr = canvasDpr(this.lowPower);
     const hc = this.els.history;
     if (hc) {
       const hr = hc.getBoundingClientRect();
@@ -186,7 +187,14 @@ export class DeEssGraph {
     this._raf = requestAnimationFrame(loop);
   }
 
-  stop() { this._running = false; cancelAnimationFrame(this._raf); }
+  stop() {
+    this._running = false;
+    cancelAnimationFrame(this._raf);
+    // Скрытый редактор не держит память GPU / a hidden editor holds no GPU memory
+    [this.cGrid, this.cMain].forEach(releaseCanvas);
+    this.w = this.h = 0;
+    this.dirtyGrid = true;
+  }
 
   render() {
     if (!this.w || !this.plugin) return;
