@@ -2,7 +2,7 @@
 /**
  * api.php — REST API пресетов / presets REST API.
  *
- *   GET    /api/presets           — список / list (metadata)
+ *   GET    /api/presets?plugin=eq|deesser — список для эффекта / list for an effect (metadata)
  *   POST   /api/presets           — создать / create
  *   GET    /api/presets/{id}      — получить / get   (?download=1 → файл / as file)
  *   PUT    /api/presets/{id}      — обновить / update
@@ -74,7 +74,7 @@ try {
     if ($id === null) {
         switch ($method) {
             case 'GET':
-                respond(200, ['presets' => $store->all()]);
+                respond(200, ['presets' => $store->all((string)($_GET['plugin'] ?? 'eq'))]);
             case 'POST':
                 respond(201, ['preset' => $store->create(body())]);
             default:

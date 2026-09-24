@@ -1,38 +1,50 @@
 /**
- * presets.js — клиент REST API пресетов (PHP) с офлайн-фолбэком на localStorage.
- * presets.js — presets REST API client (PHP) with an offline localStorage fallback.
+ * presets.js — клиент REST API пресетов (PHP) с офлайн-запасом в localStorage.
+ * presets.js — presets REST API client (PHP) with a localStorage offline fallback.
  *
- * Если PHP недоступен (статический хостинг / офлайн PWA), заводские пресеты
- * читаются из presets/index.json, а пользовательские хранятся локально.
- * Without PHP (static hosting / offline PWA) factory presets come from
- * presets/index.json and user presets are stored locally.
+ * Типы пресетов / preset kinds:
+ *   'eq'      — Movexe EQ 24:  { name, category, plugin:'eq', eq:{ mode, bands:[…] } }
+ *   'deesser' — Movexe DeEss:  { name, category, plugin:'deesser', mode, frequency, range, … }
+ *
+ * Без PHP (статический хостинг / офлайн PWA) заводские пресеты берутся из
+ * presets/index.json и presets/deesser/index.json, а свои хранятся на устройстве.
  */
+import { sanitizeDeEss, DS_ENUMS } from './detection.js';
 
 const LS_KEY = 'proeq.userPresets.v1';
-// Красивый URL (.htaccess) и прямой вызов скрипта / pretty URL (.htaccess) and direct script call
+// Красивый URL (.htaccess) и прямой вызов скрипта / pretty URL and direct script call
 const API_CANDIDATES = ['api/presets', 'php/api.php/presets'];
+const FACTORY_DIR = { eq: 'presets/', deesser: 'presets/deesser/' };
 
 function lsRead() {
   try { return JSON.parse(localStorage.getItem(LS_KEY) || '[]'); } catch { return []; }
 }
 function lsWrite(list) {
-  try { localStorage.setItem(LS_KEY, JSON.stringify(list)); } catch { /* приватный режим / private mode */ }
+  try { localStorage.setItem(LS_KEY, JSON.stringify(list)); } catch { /* приватный режим */ }
 }
 
-/** Клиентская валидация (зеркалит PHP) / client-side validation (mirrors PHP). */
+export const kindOf = (p) => (p && p.plugin === 'deesser' ? 'deesser' : 'eq');
+
+/** Проверка на клиенте (повторяет PHP) / client-side validation (mirrors PHP). */
 export function validatePreset(p) {
   const errors = [];
-  if (!p || typeof p !== 'object') return ['preset must be an object'];
-  if (typeof p.name !== 'string' || !p.name.trim() || p.name.length > 64) errors.push('name: 1–64 chars');
-  const eq = p.eq;
-  if (!eq || !Array.isArray(eq.bands)) errors.push('eq.bands must be an array');
-  else if (eq.bands.length > 24) errors.push('max 24 bands');
+  if (!p || typeof p !== 'object') return ['пресет должен быть объектом'];
+  if (typeof p.name !== 'string' || !p.name.trim() || p.name.length > 64) errors.push('название: от 1 до 64 символов');
+  if (kindOf(p) === 'deesser') {
+    if (p.mode && !DS_ENUMS.mode.includes(p.mode)) errors.push('неизвестный режим детекции');
+    if (p.channelMode && !DS_ENUMS.channelMode.includes(p.channelMode)) errors.push('неизвестный режим каналов');
+    for (const k of ['frequency', 'range', 'threshold']) if (p[k] !== undefined && !Number.isFinite(Number(p[k]))) errors.push(`${k}: нужно число`);
+  } else {
+    const eq = p.eq;
+    if (!eq || !Array.isArray(eq.bands)) errors.push('нет списка полос эквалайзера');
+    else if (eq.bands.length > 24) errors.push('не более 24 полос');
+  }
   return errors;
 }
 
 export class PresetStore {
   constructor() {
-    this.base = null;       // рабочий URL API / working API URL
+    this.base = null;
     this.online = false;
   }
 
@@ -46,47 +58,47 @@ export class PresetStore {
           headers: { 'Content-Type': 'application/json', Accept: 'application/json', ...(opts.headers || {}) }
         });
         const ct = res.headers.get('content-type') || '';
-        // Без PHP сервер отдаёт исходник/404 HTML — это не наш API.
-        // Without PHP the server returns source/404 HTML — not our API.
-        if (!ct.includes('application/json')) throw new Error(`Not an API response (${res.status})`);
+        // Без PHP сервер отдаёт исходник/HTML 404 — это не наш API.
+        if (!ct.includes('application/json')) throw new Error(`Сервер пресетов недоступен (${res.status})`);
         const data = await res.json();
-        if (!res.ok) throw Object.assign(new Error(data.error || `HTTP ${res.status}`), { status: res.status, api: true });
+        if (!res.ok) throw Object.assign(new Error(data.error || `Ошибка сервера ${res.status}`), { status: res.status, api: true });
         this.base = b;
         this.online = true;
         return data;
       } catch (e) {
         lastErr = e;
-        if (e.api) throw e; // настоящая ошибка API — не пробуем другой URL
+        if (e.api) throw e; // настоящая ошибка API — другой URL не пробуем
       }
     }
     this.online = false;
-    throw lastErr || new Error('API unavailable');
+    throw lastErr || new Error('Сервер пресетов недоступен');
   }
 
-  async list() {
+  async list(kind = 'eq') {
     try {
-      const data = await this._fetch('');
+      const data = await this._fetch(`?plugin=${kind}`);
       return data.presets;
     } catch (e) {
       if (e.api) throw e;
       let factory = [];
       try {
-        const r = await fetch('presets/index.json');
+        const r = await fetch(FACTORY_DIR[kind] + 'index.json');
         factory = (await r.json()).presets || [];
-      } catch { /* офлайн без кеша / offline without cache */ }
-      return [...factory.map((p) => ({ ...p, factory: true })), ...lsRead().map(({ eq, ...meta }) => ({ ...meta, local: true }))];
+      } catch { /* офлайн без кеша */ }
+      const local = lsRead().filter((p) => kindOf(p) === kind).map(({ eq, ...meta }) => ({ ...meta, local: true }));
+      return [...factory.map((p) => ({ ...p, factory: true })), ...local];
     }
   }
 
-  async get(id) {
+  async get(id, kind = 'eq') {
     const local = lsRead().find((p) => p.id === id);
     if (local) return local;
     try {
       return (await this._fetch('/' + encodeURIComponent(id))).preset;
     } catch (e) {
       if (e.api) throw e;
-      const r = await fetch(`presets/${encodeURIComponent(id)}.json`);
-      if (!r.ok) throw new Error('Preset not found');
+      const r = await fetch(`${FACTORY_DIR[kind]}${encodeURIComponent(id)}.json`);
+      if (!r.ok) throw new Error('Пресет не найден');
       return r.json();
     }
   }
@@ -121,18 +133,25 @@ export class PresetStore {
 
   /** Экспорт в файл .json / export to a .json file. */
   exportFile(preset) {
-    const { local, ...clean } = preset;
+    const { local, factory, id, ...clean } = preset;
     const blob = new Blob([JSON.stringify(clean, null, 2)], { type: 'application/json' });
-    downloadBlob(blob, `${(preset.name || 'preset').replace(/[^\w\-а-яё ]+/gi, '_')}.proeq.json`);
+    const ext = kindOf(preset) === 'deesser' ? 'deess' : 'eq';
+    downloadBlob(blob, `${(preset.name || 'preset').replace(/[^\w\-а-яё ]+/gi, '_')}.movexe-${ext}.json`);
   }
 
-  /** Импорт из файла / import from a file. */
-  async importFile(file) {
+  /** Импорт из файла; тип определяется по содержимому / import; kind detected from content. */
+  async importFile(file, expectedKind) {
     const text = await file.text();
     let obj;
-    try { obj = JSON.parse(text); } catch { throw new Error('Некорректный JSON / Invalid JSON'); }
-    // Допускаем «голый» EQ-state / accept a bare EQ state
-    if (Array.isArray(obj.bands)) obj = { name: file.name.replace(/\..*$/, ''), eq: obj };
+    try { obj = JSON.parse(text); } catch { throw new Error('Файл не является корректным JSON'); }
+    // «Голый» EQ-state или «голые» параметры де-эссера / bare EQ state or bare de-esser params
+    if (Array.isArray(obj.bands)) obj = { name: file.name.replace(/\..*$/, ''), plugin: 'eq', eq: obj };
+    if (!obj.plugin && obj.frequency !== undefined && !obj.eq) obj.plugin = 'deesser';
+    if (!obj.name) obj.name = file.name.replace(/\..*$/, '').slice(0, 64);
+    if (expectedKind && kindOf(obj) !== expectedKind) {
+      throw new Error(expectedKind === 'deesser' ? 'Это пресет эквалайзера, а открыт де-эссер' : 'Это пресет де-эссера, а открыт эквалайзер');
+    }
+    if (kindOf(obj) === 'deesser') obj = { name: obj.name, category: obj.category || 'Custom', plugin: 'deesser', ...sanitizeDeEss(obj) };
     const errs = validatePreset(obj);
     if (errs.length) throw new Error(errs.join('; '));
     const { id, factory, ...rest } = obj;

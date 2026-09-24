@@ -1,5 +1,5 @@
 {
-  "name": "De-Mud",
+  "name": "Убрать «муть»",
   "author": "Factory",
   "category": "Mix",
   "version": 1,
@@ -28,5 +28,6 @@
         "enabled": true
       }
     ]
-  }
+  },
+  "plugin": "eq"
 }

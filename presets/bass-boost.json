@@ -1,5 +1,5 @@
 {
-  "name": "Bass Boost",
+  "name": "Подъём баса",
   "author": "Factory",
   "category": "Master",
   "version": 1,
@@ -37,5 +37,6 @@
         "enabled": true
       }
     ]
-  }
+  },
+  "plugin": "eq"
 }

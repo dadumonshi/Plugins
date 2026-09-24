@@ -25,15 +25,15 @@ export const FILTER_TYPES = [
 ];
 
 export const FILTER_LABELS = {
-  bell: 'Bell',
-  lowshelf: 'Low Shelf',
-  highshelf: 'High Shelf',
-  lowcut: 'Low Cut',
-  highcut: 'High Cut',
-  notch: 'Notch',
-  bandpass: 'Band Pass',
-  tiltshelf: 'Tilt Shelf',
-  flattilt: 'Flat Tilt'
+  bell: 'Колокол',
+  lowshelf: 'Полка НЧ',
+  highshelf: 'Полка ВЧ',
+  lowcut: 'Срез НЧ',
+  highcut: 'Срез ВЧ',
+  notch: 'Режектор',
+  bandpass: 'Полосовой',
+  tiltshelf: 'Наклон-полка',
+  flattilt: 'Ровный наклон'
 };
 
 /** Крутизна среза, дБ/окт / Available slopes, dB/oct (as in Pro-Q 3). */

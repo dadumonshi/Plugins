@@ -19,12 +19,12 @@ import { BAND_COLORS } from './eq.js';
 export function fmtFreq(f, short = false) {
   if (f >= 1000) {
     const k = f / 1000;
-    return (k >= 10 ? k.toFixed(short ? 0 : 1) : k.toFixed(short ? 1 : 2)).replace(/\.0+$/, '') + (short ? 'k' : ' kHz');
+    return (k >= 10 ? k.toFixed(short ? 0 : 1) : k.toFixed(short ? 1 : 2)).replace(/\.0+$/, '') + (short ? 'k' : ' кГц');
   }
   if (short) return f.toFixed(f >= 10 ? 0 : 1);
-  return (f >= 100 ? f.toFixed(0) : f.toFixed(1)) + ' Hz';
+  return (f >= 100 ? f.toFixed(0) : f.toFixed(1)) + ' Гц';
 }
-export const fmtGain = (g) => (g > 0 ? '+' : g < 0 ? '−' : '') + Math.abs(g).toFixed(Math.abs(g) < 10 ? 2 : 1) + ' dB';
+export const fmtGain = (g) => (g > 0 ? '+' : g < 0 ? '−' : '') + Math.abs(g).toFixed(Math.abs(g) < 10 ? 2 : 1) + ' дБ';
 export const fmtQ = (q) => q.toFixed(q < 10 ? 2 : 1);
 
 /** Множитель положения узла по вертикали / vertical node placement factor. */
@@ -91,7 +91,7 @@ export class EQGraph extends EventTarget {
     this.svg = document.createElementNS(SVGNS, 'svg');
     this.svg.setAttribute('class', 'g-layer g-nodes');
     this.svg.setAttribute('role', 'application');
-    this.svg.setAttribute('aria-label', 'Кривая эквалайзера / EQ curve');
+    this.svg.setAttribute('aria-label', 'Кривая эквалайзера');
     this.gNodes = document.createElementNS(SVGNS, 'g');
     this.svg.appendChild(this.gNodes);
     this.wrap.appendChild(this.svg);
@@ -167,17 +167,17 @@ export class EQGraph extends EventTarget {
     const m = this.model;
     if (!m) { this.badge.textContent = ''; return; }
     const lat = this.plugin.latency || 0;
-    const mode = { zero: 'Zero Latency', natural: 'Natural Phase', linear: 'Linear Phase' }[m.settings.mode];
-    this.badge.textContent = `${mode}${lat ? ` · ${(lat / this.fs * 1000).toFixed(1)} ms` : ''}${m.settings.bypass ? ' · BYPASS' : ''}`;
+    const mode = { zero: 'Без задержки', natural: 'Натуральная фаза', linear: 'Линейная фаза' }[m.settings.mode];
+    this.badge.textContent = `${mode}${lat ? ` · ${(lat / this.fs * 1000).toFixed(1)} мс` : ''}${m.settings.bypass ? ' · ОБХОД' : ''}`;
     this.wrap.classList.toggle('is-bypassed', !!m.settings.bypass);
   }
 
   _updateHint() {
     const m = this.model;
     const touch = matchMedia('(pointer: coarse)').matches;
-    this.hint.textContent = !m ? 'Добавьте FX в цепочку / Add an FX to the chain'
-      : touch ? 'Двойной тап — добавить полосу · Double tap to add a band'
-        : 'Двойной клик — добавить полосу · Double-click to add a band';
+    this.hint.textContent = !m ? 'Добавьте эффект в цепочку'
+      : touch ? 'Двойной тап — добавить полосу'
+        : 'Двойной клик — добавить полосу';
     this.hint.hidden = !!(m && m.bands.length);
   }
 

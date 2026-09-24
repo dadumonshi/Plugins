@@ -5,6 +5,8 @@
 
 /* ============ 320px: самые узкие экраны (iPhone SE 1-го поколения) ============ */
 @media (max-width: 359px) {
+  .ds-side { width: 54px; }
+  .ds-quick { padding: 0 7px; font-size: 12px; }
   :root { --touch: 44px; --knob: 80px; --fs: 14px; }
   .topbar { gap: 0; padding-left: 2px; padding-right: 2px; }
   .rec-time { min-width: 54px; font-size: 13px; }
@@ -188,6 +190,8 @@
   }
   .sheet-grabber, [data-act="expand"] { display: none; }
   .ctl-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .ds-history { height: 32px; }
+  .ds-head { flex-wrap: wrap; }
   .ctl-value { min-width: 0; font-size: 15px; }
   .band-body { padding-bottom: 12px; gap: 10px; }
   .fab { right: 10px; bottom: 16px; width: 48px; height: 48px; }

@@ -2,73 +2,83 @@
   "presets": [
     {
       "id": "vocal-presence",
-      "name": "Vocal Presence",
+      "name": "Присутствие вокала",
       "author": "Factory",
       "category": "Vocal",
-      "bands": 4
+      "bands": 4,
+      "plugin": "eq"
     },
     {
       "id": "podcast-voice",
-      "name": "Podcast Voice",
+      "name": "Голос для подкаста",
       "author": "Factory",
       "category": "Voice",
-      "bands": 5
+      "bands": 5,
+      "plugin": "eq"
     },
     {
       "id": "de-mud",
-      "name": "De-Mud",
+      "name": "Убрать «муть»",
       "author": "Factory",
       "category": "Mix",
-      "bands": 2
+      "bands": 2,
+      "plugin": "eq"
     },
     {
       "id": "air",
-      "name": "Air",
+      "name": "Воздух",
       "author": "Factory",
       "category": "Master",
-      "bands": 1
+      "bands": 1,
+      "plugin": "eq"
     },
     {
       "id": "bass-boost",
-      "name": "Bass Boost",
+      "name": "Подъём баса",
       "author": "Factory",
       "category": "Master",
-      "bands": 3
+      "bands": 3,
+      "plugin": "eq"
     },
     {
       "id": "telephone",
-      "name": "Telephone",
+      "name": "Телефон",
       "author": "Factory",
       "category": "FX",
-      "bands": 3
+      "bands": 3,
+      "plugin": "eq"
     },
     {
       "id": "mid-side-wide",
-      "name": "Mid/Side Wide",
+      "name": "Шире (Mid/Side)",
       "author": "Factory",
       "category": "Master",
-      "bands": 3
+      "bands": 3,
+      "plugin": "eq"
     },
     {
       "id": "guitar-clarity",
-      "name": "Acoustic Guitar Clarity",
+      "name": "Чистая акустика",
       "author": "Factory",
       "category": "Instrument",
-      "bands": 4
+      "bands": 4,
+      "plugin": "eq"
     },
     {
       "id": "hum-removal",
-      "name": "Hum Removal 50 Hz",
+      "name": "Удаление фона 50 Гц",
       "author": "Factory",
       "category": "Repair",
-      "bands": 4
+      "bands": 4,
+      "plugin": "eq"
     },
     {
       "id": "warm-tilt",
-      "name": "Warm Tilt",
+      "name": "Тёплый наклон",
       "author": "Factory",
       "category": "Master",
-      "bands": 1
+      "bands": 1,
+      "plugin": "eq"
     }
   ]
 }

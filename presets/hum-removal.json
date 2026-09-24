@@ -1,5 +1,5 @@
 {
-  "name": "Hum Removal 50 Hz",
+  "name": "Удаление фона 50 Гц",
   "author": "Factory",
   "category": "Repair",
   "version": 1,
@@ -46,5 +46,6 @@
         "enabled": true
       }
     ]
-  }
+  },
+  "plugin": "eq"
 }

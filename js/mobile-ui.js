@@ -262,10 +262,10 @@ export class BottomSheet extends EventTarget {
  *  Параметр → нормализация / parameter normalisation
  * ================================================================== */
 const PARAMS = {
-  freq: { min: LIMITS.freqMin, max: LIMITS.freqMax, log: true, label: 'Freq', fmt: (v) => fmtFreq(v) },
-  gain: { min: LIMITS.gainMin, max: LIMITS.gainMax, log: false, label: 'Gain', fmt: (v) => fmtGain(v), bipolar: true },
-  q: { min: LIMITS.qMin, max: LIMITS.qMax, log: true, label: 'Q', fmt: (v) => fmtQ(v) },
-  output: { min: -36, max: 36, log: false, label: 'Output', fmt: (v) => fmtGain(v), bipolar: true }
+  freq: { min: LIMITS.freqMin, max: LIMITS.freqMax, log: true, label: 'Частота', fmt: (v) => fmtFreq(v) },
+  gain: { min: LIMITS.gainMin, max: LIMITS.gainMax, log: false, label: 'Усиление', fmt: (v) => fmtGain(v), bipolar: true },
+  q: { min: LIMITS.qMin, max: LIMITS.qMax, log: true, label: 'Добротность', fmt: (v) => fmtQ(v) },
+  output: { min: -36, max: 36, log: false, label: 'Выход', fmt: (v) => fmtGain(v), bipolar: true }
 };
 const toNorm = (p, v) => (p.log ? Math.log(v / p.min) / Math.log(p.max / p.min) : (v - p.min) / (p.max - p.min));
 const fromNorm = (p, n) => (p.log ? p.min * Math.pow(p.max / p.min, clamp(n, 0, 1)) : p.min + clamp(n, 0, 1) * (p.max - p.min));
@@ -280,9 +280,14 @@ function parseValue(str) {
 
 /** Базовый регулятор: значение, ввод числа, двойной тап = дефолт. Base control. */
 class ParamControl {
-  constructor(key, { onBegin, onChange, onEnd, getDefault }) {
-    this.key = key;
-    this.p = PARAMS[key];
+  /**
+   * @param {string|object} key  ключ из PARAMS или собственный дескриптор
+   *        { id, min, max, log, label, fmt, bipolar } / PARAMS key or a custom descriptor
+   */
+  constructor(key, { onBegin, onChange, onEnd, getDefault, onSelect }) {
+    this.p = typeof key === 'object' ? key : PARAMS[key];
+    this.key = typeof key === 'object' ? key.id : key;
+    this.onSelect = onSelect;
     this.onBegin = onBegin; this.onChange = onChange; this.onEnd = onEnd;
     this.getDefault = getDefault;
     this.value = this.p.min;
@@ -291,7 +296,7 @@ class ParamControl {
     this.valueBtn = document.createElement('button');
     this.valueBtn.className = 'ctl-value mono';
     this.valueBtn.type = 'button';
-    this.valueBtn.title = 'Ввести значение / Type a value';
+    this.valueBtn.title = 'Ввести значение';
     this.valueBtn.addEventListener('click', () => this._edit());
     this.labelEl = document.createElement('div');
     this.labelEl.className = 'ctl-label';
@@ -328,6 +333,8 @@ class ParamControl {
   }
 
   setColor(c) { this.root.style.setProperty('--c', c); }
+  setSelected(on) { this.root.classList.toggle('is-selected', on); }
+  _reset() { this.onBegin(); this.onChange(this.getDefault()); this.onEnd(); haptics.tick(); }
   _render() {}
 }
 
@@ -371,16 +378,20 @@ export class Knob extends ParamControl {
   }
 
   _bind() {
-    let startN = 0, sx = 0, sy = 0, pid = null, lastTap = 0;
+    let startN = 0, sx = 0, sy = 0, pid = null, lastTap = 0, lp = 0;
     const d = this.dial;
     d.addEventListener('pointerdown', (e) => {
       if (this.root.classList.contains('is-disabled')) return;
+      this.onSelect?.(this.key);
       const now = performance.now();
       if (now - lastTap < 300) { // двойной тап → дефолт / double tap → default
-        this.onBegin(); this.onChange(this.getDefault()); this.onEnd(); haptics.tick();
+        this._reset();
         lastTap = 0; return;
       }
       lastTap = now;
+      // Long press 500 мс без движения → сброс к дефолту / long press → reset to default
+      clearTimeout(lp);
+      lp = setTimeout(() => { if (pid !== null) { this.onEnd(); pid = null; d.classList.remove('is-active'); this._reset(); } }, 500);
       pid = e.pointerId; sx = e.clientX; sy = e.clientY;
       startN = toNorm(this.p, this.value);
       try { d.setPointerCapture(pid); } catch { /* noop */ }
@@ -389,12 +400,14 @@ export class Knob extends ParamControl {
     });
     d.addEventListener('pointermove', (e) => {
       if (e.pointerId !== pid) return;
+      if (Math.hypot(e.clientX - sx, e.clientY - sy) > 6) clearTimeout(lp);
       // 220 px = полный диапазон; Shift — точно / 220 px = full range; Shift = fine
       const k = e.shiftKey ? 0.2 : 1;
       const delta = ((sy - e.clientY) + (e.clientX - sx) * 0.6) / 220 * k;
       this.onChange(fromNorm(this.p, startN + delta));
     });
     const end = (e) => {
+      clearTimeout(lp);
       if (e.pointerId !== pid) return;
       pid = null;
       d.classList.remove('is-active');
@@ -428,7 +441,7 @@ export class HSlider extends ParamControl {
     head.append(this.labelEl, this.valueBtn);
     this.root.append(head, this.input);
     let active = false;
-    this.input.addEventListener('pointerdown', () => { active = true; this.onBegin(); });
+    this.input.addEventListener('pointerdown', () => { active = true; this.onSelect?.(this.key); this.onBegin(); });
     this.input.addEventListener('input', () => {
       if (!active) { this.onBegin(); active = true; }
       this.onChange(fromNorm(this.p, this.input.value / 1000));
@@ -518,15 +531,15 @@ export class BandPanel {
     this.head.innerHTML = `
       <div class="sheet-grabber" data-sheet-handle aria-hidden="true"></div>
       <div class="band-head-row" data-sheet-handle>
-        <button class="icon-btn" data-act="prev" aria-label="Предыдущая полоса / Previous band"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+        <button class="icon-btn" data-act="prev" aria-label="Предыдущая полоса"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
         <span class="band-dot mono"></span>
         <div class="band-title">
           <div class="band-type"></div>
           <div class="band-sum mono"></div>
         </div>
-        <button class="icon-btn" data-act="next" aria-label="Следующая полоса / Next band"><svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg></button>
-        <button class="icon-btn band-power" data-act="power" aria-label="Вкл/выкл полосу / Band on/off"><svg viewBox="0 0 24 24"><path d="M12 3v8M7 6.5a7 7 0 1 0 10 0"/></svg></button>
-        <button class="icon-btn" data-act="expand" aria-label="Развернуть / Expand"><svg viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></svg></button>
+        <button class="icon-btn" data-act="next" aria-label="Следующая полоса"><svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg></button>
+        <button class="icon-btn band-power" data-act="power" aria-label="Включить/выключить полосу"><svg viewBox="0 0 24 24"><path d="M12 3v8M7 6.5a7 7 0 1 0 10 0"/></svg></button>
+        <button class="icon-btn" data-act="expand" aria-label="Развернуть"><svg viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></svg></button>
       </div>`;
     this.head.addEventListener('click', (e) => {
       const b = e.target.closest('[data-act]');
@@ -551,23 +564,23 @@ export class BandPanel {
 
   _buildBody() {
     this.body.innerHTML = `
-      <div class="type-chips" role="radiogroup" aria-label="Тип фильтра / Filter type"></div>
+      <div class="type-chips" role="radiogroup" aria-label="Тип фильтра"></div>
       <div class="ctl-row"></div>
       <div class="opt-row">
-        <label class="opt"><span>Slope</span>
-          <select class="sel-slope" aria-label="Крутизна / Slope">${SLOPES.map((s) => `<option value="${s}">${s} dB/oct</option>`).join('')}</select>
+        <label class="opt"><span>Крутизна</span>
+          <select class="sel-slope" aria-label="Крутизна">${SLOPES.map((s) => `<option value="${s}">${s} дБ/окт</option>`).join('')}</select>
         </label>
-        <div class="opt"><span>Stereo</span>
-          <div class="seg seg-place" role="radiogroup" aria-label="Стерео-размещение / Stereo placement">
-            ${PLACEMENTS.map((p) => `<button type="button" role="radio" data-place="${p}">${{ stereo: 'St', left: 'L', right: 'R', mid: 'M', side: 'S' }[p]}</button>`).join('')}
+        <div class="opt"><span>Каналы</span>
+          <div class="seg seg-place" role="radiogroup" aria-label="Размещение в стерео">
+            ${PLACEMENTS.map((p) => `<button type="button" role="radio" data-place="${p}" title="${{ stereo: 'Стерео', left: 'Левый', right: 'Правый', mid: 'Середина (Mid)', side: 'Бока (Side)' }[p]}">${{ stereo: 'Ст', left: 'Л', right: 'П', mid: 'М', side: 'С' }[p]}</button>`).join('')}
           </div>
         </div>
       </div>
       <div class="act-row">
-        <button type="button" class="chip-btn" data-act="copy">Copy</button>
-        <button type="button" class="chip-btn" data-act="paste">Paste</button>
-        <button type="button" class="chip-btn" data-act="reset">Reset</button>
-        <button type="button" class="chip-btn is-danger" data-act="delete">Delete</button>
+        <button type="button" class="chip-btn" data-act="copy">Копировать</button>
+        <button type="button" class="chip-btn" data-act="paste">Вставить</button>
+        <button type="button" class="chip-btn" data-act="reset">Сбросить</button>
+        <button type="button" class="chip-btn is-danger" data-act="delete">Удалить</button>
       </div>`;
     const chips = this.body.querySelector('.type-chips');
     for (const t of FILTER_TYPES) {
@@ -603,13 +616,13 @@ export class BandPanel {
       const sel = this.model?.selected;
       if (!b || !this.model) return;
       const act = b.dataset.act;
-      if (act === 'copy' && sel) { this.model.copyBand(sel.id); this.toast.show('Скопировано · Copied', { short: true }); }
-      if (act === 'paste') { if (!this.model.pasteBand()) this.toast.show('Буфер пуст · Clipboard empty', { short: true }); }
+      if (act === 'copy' && sel) { this.model.copyBand(sel.id); this.toast.show('Скопировано', { short: true }); }
+      if (act === 'paste') { if (!this.model.pasteBand()) this.toast.show('Буфер пуст', { short: true }); }
       if (act === 'reset' && sel) this.model.resetBand(sel.id);
       if (act === 'delete' && sel) {
         this.model.removeBand(sel.id);
         haptics.heavy();
-        this.toast.show('Полоса удалена · Band deleted', { action: { label: 'Undo', fn: () => this.model.undo() } });
+        this.toast.show('Полоса удалена', { action: { label: 'Отменить', fn: () => this.model.undo() } });
       }
     });
     this._buildControls();
@@ -644,9 +657,9 @@ export class BandPanel {
     const dot = this.head.querySelector('.band-dot');
     dot.textContent = idx;
     dot.style.background = col;
-    this.head.querySelector('.band-type').textContent = `${FILTER_LABELS[b.type]}${b.placement !== 'stereo' ? ' · ' + b.placement.toUpperCase() : ''}`;
+    this.head.querySelector('.band-type').textContent = `${FILTER_LABELS[b.type]}${b.placement !== 'stereo' ? ' · ' + { left: 'Левый', right: 'Правый', mid: 'Mid', side: 'Side' }[b.placement] : ''}`;
     this.head.querySelector('.band-sum').textContent = GAINLESS.has(b.type)
-      ? `${fmtFreq(b.freq)} · Q ${fmtQ(b.q)} · ${b.slope} dB/oct`
+      ? `${fmtFreq(b.freq)} · Q ${fmtQ(b.q)} · ${b.slope} дБ/окт`
       : `${fmtFreq(b.freq)} · ${fmtGain(b.gain)} · Q ${fmtQ(b.q)}`;
     const pw = this.head.querySelector('.band-power');
     pw.classList.toggle('is-off', !b.enabled);

@@ -1,5 +1,5 @@
 {
-  "name": "Telephone",
+  "name": "Телефон",
   "author": "Factory",
   "category": "FX",
   "version": 1,
@@ -37,5 +37,6 @@
         "enabled": true
       }
     ]
-  }
+  },
+  "plugin": "eq"
 }

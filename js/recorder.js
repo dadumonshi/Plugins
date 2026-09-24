@@ -169,7 +169,7 @@ export class Recorder extends EventTarget {
     const sr = this.engine.sampleRate;
     const take = {
       id: `t${Date.now().toString(36)}`,
-      name: `Take ${this.takes.length + 1}`,
+      name: `Запись ${this.takes.length + 1}`,
       sampleRate: sr,
       channels: [concat(this._chunksL, this._frames), concat(this._chunksR, this._frames)],
       duration: this._frames / sr,
@@ -227,7 +227,7 @@ export class Recorder extends EventTarget {
    */
   async bounce(take, chainState, PluginLookup) {
     const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
-    if (!OAC) throw new Error('OfflineAudioContext не поддерживается');
+    if (!OAC) throw new Error('Офлайн-обработка не поддерживается этим браузером');
     const len = take.channels[0].length;
     const tail = Math.round(take.sampleRate * 0.25);
     const octx = new OAC(2, len + tail, take.sampleRate);
@@ -244,6 +244,8 @@ export class Recorder extends EventTarget {
       if (!P) continue;
       const p = new P(octx, { lowPower: false });
       p.init?.(slot.state);
+      // Плагины на AudioWorklet (де-эссер) грузят модуль асинхронно / worklet plugins load async
+      if (p.ready) await p.ready;
       // В офлайне FIR считается синхронно / offline: design FIR synchronously
       if (p.model && p.model.settings.mode !== 'zero') await p._computeFir?.();
       prev.connect(p.input);
@@ -257,7 +259,7 @@ export class Recorder extends EventTarget {
     const ch = [0, 1].map((c) => rendered.getChannelData(c).slice(lat, lat + len));
     const out = {
       id: `t${Date.now().toString(36)}`,
-      name: `${take.name} (FX)`.slice(0, 40),
+      name: `${take.name} (эффекты)`.slice(0, 40),
       sampleRate: take.sampleRate, channels: ch, duration: len / take.sampleRate, created: Date.now(), wet: true
     };
     this.takes.push(out);

@@ -1,13 +1,18 @@
 /**
- * app.js — точка входа: связывает аудио-движок, FX-цепочку, запись, график, жесты и мобильный UI.
- * app.js — entry point: wires the audio engine, FX chain, recorder, graph, gestures and mobile UI.
+ * app.js — точка входа: связывает аудио-движок, цепочку эффектов, запись, графики, жесты и мобильный UI.
+ * app.js — entry point: wires the audio engine, FX chain, recorder, graphs, gestures and mobile UI.
+ *
+ * Эффекты / Effects: Movexe EQ 24 (eq.js), Movexe DeEss (deesser.js).
  */
 import { AudioEngine, audioSupported, micSupported } from './audio.js';
-import { registerPlugin, listPlugins } from './fx-chain.js';
+import { registerPlugin, listPlugins, getPlugin } from './fx-chain.js';
 import { ProEQPlugin, EQModel, BAND_COLORS, autoTypeFor } from './eq.js';
+import { DeEsserPlugin } from './deesser.js';
 import { Recorder } from './recorder.js';
 import { EQGraph, fmtGain } from './ui.js';
-import { GraphGestures } from './gestures.js';
+import { DeEssGraph } from './graph.js';
+import { GraphGestures, DeEssGestures } from './gestures.js';
+import { DeEssPanel } from './deesser-ui.js';
 import { haptics } from './touch.js';
 import {
   detectDevice, fullscreen, watchOrientation, Toast, ContextMenu, Drawer, BottomSheet, BandPanel, Knob
@@ -24,13 +29,13 @@ function loadPrefs() {
   try { return JSON.parse(localStorage.getItem(PREFS_KEY) || '{}'); } catch { return {}; }
 }
 function savePrefs(p) {
-  try { localStorage.setItem(PREFS_KEY, JSON.stringify(p)); } catch { /* private mode */ }
+  try { localStorage.setItem(PREFS_KEY, JSON.stringify(p)); } catch { /* приватный режим */ }
 }
 
 const dev = detectDevice();
 const prefs = Object.assign({
-  theme: 'auto', haptics: true, controls: 'knobs',
-  maxBands: dev.small ? 8 : 24,          // на телефоне по умолчанию 8 / 8 by default on phones
+  theme: 'dark', haptics: true, controls: 'knobs',
+  maxBands: dev.small ? 8 : 24,          // на телефоне по умолчанию 8 полос
   lowPower: dev.lowPower,
   analyzer: { pre: true, post: true, speed: 'medium', tilt: 4.5 },
   fftSize: dev.lowPower ? 4096 : 8192,
@@ -39,13 +44,16 @@ const prefs = Object.assign({
   tap: 'wet', loop: false
 }, loadPrefs());
 
-/* ---------------- классы <html> / root classes ---------------- */
+/* ---------------- тема и классы <html> / theme & root classes ---------------- */
 const root = document.documentElement;
 function applyTheme() {
+  // По умолчанию всегда тёмная (как у плагинов FabFilter); «Как в системе» — по желанию.
+  // Dark by default; "system" is opt-in.
   if (prefs.theme === 'auto') root.removeAttribute('data-theme');
   else root.dataset.theme = prefs.theme;
-  const dark = prefs.theme === 'dark' || (prefs.theme === 'auto' && !matchMedia('(prefers-color-scheme: light)').matches);
-  document.querySelector('meta[name="theme-color"]').setAttribute('content', dark ? '#1a1a1a' : '#f2f2f2');
+  const light = prefs.theme === 'light' || (prefs.theme === 'auto' && matchMedia('(prefers-color-scheme: light)').matches);
+  document.querySelector('meta[name="theme-color"]').setAttribute('content', light ? '#f0f0f0' : '#1a1a1a');
+  document.querySelector('meta[name="color-scheme"]').setAttribute('content', light ? 'light' : 'dark');
 }
 applyTheme();
 root.classList.toggle('low-power', !!prefs.lowPower);
@@ -62,6 +70,13 @@ const panel = new BandPanel($('#sheet'), sheet, { toast, controlStyle: prefs.con
 const graph = new EQGraph($('#graphWrap'), { lowPower: prefs.lowPower });
 graph.analyzer = { ...prefs.analyzer };
 graph.view.range = prefs.range;
+
+const dsSheet = new BottomSheet($('#dsSheet'));
+const dsPanel = new DeEssPanel($('#dsSheet'), dsSheet, { toast, controlStyle: prefs.controls });
+const dsGraph = new DeEssGraph($('#dsGraphWrap'), {
+  history: $('#dsHistory'), grBar: $('#dsGrBar'), led: $('#dsLed'),
+  grText: $('#dsGrText'), peakText: $('#dsPeakText'), inMeter: $('#dsIn'), outMeter: $('#dsOut')
+}, { lowPower: prefs.lowPower });
 const presets = new PresetStore();
 
 function fatal(msg) {
@@ -75,8 +90,9 @@ function fatal(msg) {
 let engine = null;
 let recorder = null;
 try {
-  if (!audioSupported) throw new Error('Web Audio API не поддерживается этим браузером / Web Audio API is not supported');
+  if (!audioSupported) throw new Error('Этот браузер не поддерживает Web Audio API');
   registerPlugin(ProEQPlugin);
+  registerPlugin(DeEsserPlugin);
   engine = new AudioEngine({ lowPower: prefs.lowPower, fftSize: prefs.fftSize, maxBands: prefs.maxBands });
   recorder = new Recorder(engine);
   recorder.tapMode = prefs.tap;
@@ -85,17 +101,19 @@ try {
   fatal(e.message);
 }
 
-/** Разблокировка аудио первым жестом (iOS/Chrome autoplay policy). Unlock audio on first gesture. */
+/** Разблокировка аудио первым жестом (политика автозапуска iOS/Chrome). */
 const unlock = () => { engine?.resume(); };
 document.addEventListener('pointerdown', unlock, { capture: true, passive: true });
 document.addEventListener('keydown', unlock, { capture: true });
 
 /* ---------------- текущий слот / current slot ---------------- */
 let currentSlotId = null;
-let presetName = 'Default';
+let presetName = 'По умолчанию';
 
 function currentSlot() { return engine?.chain.get(currentSlotId) || null; }
 function currentModel() { return currentSlot()?.plugin.model || null; }
+function currentEditor() { return currentSlot()?.descriptor.editor || null; }
+const isEq = (m) => m instanceof EQModel;
 
 let modelListener = null;
 function selectSlot(id) {
@@ -103,29 +121,43 @@ function selectSlot(id) {
   if (prev && modelListener) prev.removeEventListener('change', modelListener);
   currentSlotId = id;
   const slot = currentSlot();
-  const plugin = slot && slot.descriptor.editor === 'eq' ? slot.plugin : null;
-  graph.bind(plugin, engine);
-  panel.bind(plugin ? plugin.model : null);
-  const m = plugin?.model;
+  const editor = currentEditor();
+  const eqPlugin = editor === 'eq' ? slot.plugin : null;
+  const dsPlugin = editor === 'deesser' ? slot.plugin : null;
+  $('#app').dataset.editor = editor || 'none';
+
+  graph.bind(eqPlugin, engine);
+  panel.bind(eqPlugin ? eqPlugin.model : null);
+  dsGraph.bind(dsPlugin, engine);
+  dsPanel.bind(dsPlugin);
+  // Рисуем только видимый график (экономия батареи) / draw only the visible graph
+  if (eqPlugin) { dsGraph.stop(); dsSheet.set('hidden'); graph.start(); requestAnimationFrame(() => graph.resize()); }
+  else { graph.stop(); sheet.set('hidden'); }
+  if (dsPlugin) { dsGraph.start(); requestAnimationFrame(() => dsGraph.resize()); if (!dsSheet.isSheet) dsSheet.set('full'); else dsSheet.set('peek'); }
+
+  const m = slot?.plugin.model;
   if (m) {
-    m.setMaxBands(Math.max(prefs.maxBands, m.bands.length));
-    m.settings.linearQuality = prefs.linearQuality;
+    if (isEq(m)) {
+      m.setMaxBands(Math.max(prefs.maxBands, m.bands.length));
+      m.settings.linearQuality = prefs.linearQuality;
+    }
     modelListener = (e) => onModelChange(e.detail);
     m.addEventListener('change', modelListener);
   }
-  $('#app').classList.toggle('no-plugin', !plugin);
+  $('#app').classList.toggle('no-plugin', !slot);
   syncEqBar();
   syncHistory();
   renderFxList();
+  scheduleSave();
 }
 
 function onModelChange(d) {
-  if (d.kind === 'history' || d.kind === 'bands') syncHistory();
-  if (d.kind === 'settings' || (d.kind === 'bands' && currentModel()?.settings.autoGain)) syncEqBar();
+  if (d.kind === 'history' || d.kind === 'bands' || d.kind === 'params') syncHistory();
+  if (d.kind === 'settings' || (d.kind === 'bands' && currentModel()?.settings?.autoGain)) syncEqBar();
   if (d.kind === 'limit') {
-    toast.show(`Лимит полос: ${d.max} · Band limit`, { action: { label: 'Изменить', fn: () => drawer.open() } });
+    toast.show(`Достигнут лимит полос: ${d.max}`, { action: { label: 'Изменить', fn: () => drawer.open() } });
   }
-  if (d.kind === 'bands' || d.kind === 'settings') scheduleSave();
+  if (d.kind === 'bands' || d.kind === 'settings' || d.kind === 'params') scheduleSave();
 }
 
 function syncHistory() {
@@ -142,7 +174,7 @@ function scheduleSave() {
     if (!engine) return;
     try {
       localStorage.setItem(SESSION_KEY, JSON.stringify({ chain: engine.chain.toJSON(), current: engine.chain.slots.findIndex((s) => s.id === currentSlotId), presetName }));
-    } catch { /* quota / private mode */ }
+    } catch { /* переполнение / приватный режим */ }
   }, 400);
 }
 
@@ -155,9 +187,9 @@ function restoreSession() {
       try {
         const slot = engine.chain.add(s.plugin, s.state);
         if (s.bypass) slot.setBypass(true);
-      } catch (e) { console.warn('[session] skip slot', e); }
+      } catch (e) { console.warn('[session] слот пропущен', e); }
     }
-    presetName = sess.presetName || 'Default';
+    presetName = sess.presetName && sess.presetName !== 'Default' ? sess.presetName : 'По умолчанию';
   }
   if (!engine.chain.slots.length) engine.chain.add('proeq');
   const idx = sess && sess.current >= 0 ? Math.min(sess.current, engine.chain.slots.length - 1) : 0;
@@ -165,7 +197,7 @@ function restoreSession() {
   $('#presetName').textContent = presetName;
 }
 
-/* ---------------- FX-цепочка / FX chain UI ---------------- */
+/* ---------------- цепочка эффектов / FX chain UI ---------------- */
 function renderFxList() {
   if (!engine) return;
   const list = $('#fxList');
@@ -178,10 +210,10 @@ function renderFxList() {
     li.innerHTML = `
       <span class="fx-idx mono">${i + 1}</span>
       <button class="fx-name" data-act="edit">${s.name}</button>
-      <button class="icon-btn fx-pw${s.bypassed ? ' is-off' : ''}" data-act="bypass" aria-pressed="${!s.bypassed}" aria-label="Bypass"><svg viewBox="0 0 24 24"><path d="M12 3v8M7 6.5a7 7 0 1 0 10 0"/></svg></button>
-      <button class="icon-btn" data-act="up" aria-label="Выше / Move up" ${i === 0 ? 'disabled' : ''}><svg viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></svg></button>
-      <button class="icon-btn" data-act="down" aria-label="Ниже / Move down" ${i === engine.chain.slots.length - 1 ? 'disabled' : ''}><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
-      <button class="icon-btn" data-act="remove" aria-label="Удалить / Remove"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>`;
+      <button class="icon-btn fx-pw${s.bypassed ? ' is-off' : ''}" data-act="bypass" aria-pressed="${!s.bypassed}" aria-label="Обход" title="Обход"><svg viewBox="0 0 24 24"><path d="M12 3v8M7 6.5a7 7 0 1 0 10 0"/></svg></button>
+      <button class="icon-btn" data-act="up" aria-label="Выше" ${i === 0 ? 'disabled' : ''}><svg viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></svg></button>
+      <button class="icon-btn" data-act="down" aria-label="Ниже" ${i === engine.chain.slots.length - 1 ? 'disabled' : ''}><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
+      <button class="icon-btn" data-act="remove" aria-label="Удалить"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>`;
     li.dataset.id = s.id;
     list.appendChild(li);
 
@@ -193,11 +225,11 @@ function renderFxList() {
     t.textContent = `${i + 1} · ${s.name}`;
     tabs.appendChild(t);
   });
-  if (!engine.chain.slots.length) list.innerHTML = '<li class="empty">Цепочка пуста — нажмите «+ FX». Chain is empty.</li>';
+  if (!engine.chain.slots.length) list.innerHTML = '<li class="empty">Цепочка пуста — нажмите «+ Эффект».</li>';
   const add = document.createElement('button');
   add.className = 'fx-tab fx-tab-add';
   add.textContent = '+';
-  add.setAttribute('aria-label', 'Добавить FX / Add FX');
+  add.setAttribute('aria-label', 'Добавить эффект');
   add.dataset.add = '1';
   tabs.appendChild(add);
 }
@@ -217,8 +249,8 @@ $('#fxList').addEventListener('click', (e) => {
     const state = { plugin: s.descriptor.id, state: s.plugin.getState(), index: engine.chain.slots.indexOf(s) };
     engine.chain.remove(id);
     if (id === currentSlotId) selectSlot(engine.chain.slots[0]?.id || null);
-    toast.show(`${s.name} удалён · removed`, {
-      action: { label: 'Undo', fn: () => { const n = engine.chain.add(state.plugin, state.state, state.index); selectSlot(n.id); } }
+    toast.show(`${s.name} удалён из цепочки`, {
+      action: { label: 'Отменить', fn: () => { const n = engine.chain.add(state.plugin, state.state, state.index); selectSlot(n.id); } }
     });
   }
   renderFxList();
@@ -239,7 +271,7 @@ function showAddFxMenu(rect) {
       const s = engine.chain.add(d.id);
       selectSlot(s.id);
       setView('eq');
-      toast.show(`${d.name} добавлен в цепочку · added`, { short: true });
+      toast.show(`${d.name} добавлен в цепочку`, { short: true });
       scheduleSave();
     }
   }));
@@ -248,7 +280,7 @@ function showAddFxMenu(rect) {
 $('#btnAddFx').addEventListener('click', (e) => showAddFxMenu(e.currentTarget.getBoundingClientRect()));
 engine?.chain.addEventListener('change', () => { renderFxList(); scheduleSave(); });
 
-/* ---------------- жесты графика / graph gestures ---------------- */
+/* ---------------- жесты эквалайзера / EQ gestures ---------------- */
 new GraphGestures(graph, {
   unlock,
   openSheet: (b) => panel.open(b),
@@ -262,25 +294,24 @@ graph.addEventListener('zoom', () => {
   $('#btnZoomReset').hidden = !graph.zoomed;
   const r = Math.round(graph.view.range);
   const sel = $('#selRange');
-  if (![...sel.options].some((o) => o.value === String(r))) sel.value = '';
-  else sel.value = String(r);
+  sel.value = [...sel.options].some((o) => o.value === String(r)) ? String(r) : '';
 });
 $('#btnZoomReset').addEventListener('click', () => { graph.resetZoom(); graph.setZoom({ range: prefs.range }); });
 
 function showGraphMenu(band, pos, freq, gain) {
   const m = currentModel();
-  if (!m) return;
+  if (!isEq(m)) return;
   let items;
   if (band) {
     const idx = m.bands.indexOf(band) + 1;
     items = [
       ...FILTER_TYPES.map((t) => ({ label: FILTER_LABELS[t], checked: band.type === t, color: band.type === t ? BAND_COLORS[band.color] : '', fn: () => m.updateBand(band.id, { type: t }) })),
       '-',
-      { label: band.enabled ? `Bypass полосы ${idx}` : `Включить полосу ${idx}`, fn: () => m.updateBand(band.id, { enabled: !band.enabled }) },
-      { label: 'Copy', fn: () => m.copyBand(band.id) },
-      { label: 'Paste', disabled: !EQModel.hasClipboard, fn: () => m.pasteBand() },
-      { label: 'Reset', fn: () => m.resetBand(band.id) },
-      { label: 'Delete', danger: true, fn: () => m.removeBand(band.id) }
+      { label: band.enabled ? `Выключить полосу ${idx}` : `Включить полосу ${idx}`, fn: () => m.updateBand(band.id, { enabled: !band.enabled }) },
+      { label: 'Копировать', fn: () => m.copyBand(band.id) },
+      { label: 'Вставить', disabled: !EQModel.hasClipboard, fn: () => m.pasteBand() },
+      { label: 'Сбросить', fn: () => m.resetBand(band.id) },
+      { label: 'Удалить', danger: true, fn: () => m.removeBand(band.id) }
     ];
   } else {
     items = [
@@ -292,19 +323,18 @@ function showGraphMenu(band, pos, freq, gain) {
         }
       })),
       '-',
-      { label: 'Paste', disabled: !EQModel.hasClipboard, fn: () => m.pasteBand() },
-      { label: 'Zoom 1:1', disabled: !graph.zoomed, fn: () => graph.resetZoom() },
-      { label: 'Сбросить все · Reset all', danger: true, disabled: !m.bands.length, fn: () => m.resetAll() }
+      { label: 'Вставить', disabled: !EQModel.hasClipboard, fn: () => m.pasteBand() },
+      { label: 'Масштаб 1:1', disabled: !graph.zoomed, fn: () => graph.resetZoom() },
+      { label: 'Сбросить все полосы', danger: true, disabled: !m.bands.length, fn: () => m.resetAll() }
     ];
   }
   ctxMenu.show(items, pos.clientX, pos.clientY);
 }
 
-/* ---------------- FAB: добавить полосу / add band ---------------- */
+/* FAB эквалайзера: добавить полосу в самый большой «пробел» / EQ FAB: add a band in the largest gap */
 $('#fab').addEventListener('click', () => {
   const m = currentModel();
-  if (!m) return;
-  // Свободная частота: наибольший «пробел» по октавам / freq in the largest octave gap
+  if (!isEq(m)) return;
   const fs = [20, ...m.bands.map((b) => b.freq).sort((a, b) => a - b), 20000];
   let best = 1000, gap = 0;
   for (let i = 1; i < fs.length; i++) {
@@ -315,10 +345,34 @@ $('#fab').addEventListener('click', () => {
   if (b) { haptics.select(); panel.open(b); const p = graph.nodePos(b); graph.ripple(p.x, p.y, BAND_COLORS[b.color]); }
 });
 
-/* ---------------- нижняя панель EQ / EQ bar ---------------- */
+/* ---------------- де-эссер: жесты и FAB / de-esser: gestures & FAB ---------------- */
+new DeEssGestures(dsGraph, {
+  unlock,
+  openSheet: () => dsPanel.open(),
+  toast: (msg, o) => toast.show(msg, o)
+});
+
+$('#dsFab').addEventListener('click', (e) => {
+  const m = currentModel();
+  if (!m || isEq(m)) return;
+  const p = m.params;
+  const r = e.currentTarget.getBoundingClientRect();
+  ctxMenu.show([
+    { label: 'Прослушать удаляемое', checked: p.audition, color: p.audition ? 'var(--ds)' : '', fn: () => m.set({ audition: !p.audition }, { history: false }) },
+    { label: 'Обход', checked: p.bypass, color: p.bypass ? '#f5a524' : '', fn: () => m.set({ bypass: !p.bypass }, { history: false }) },
+    { label: 'Автопорог', checked: p.autoThreshold, color: p.autoThreshold ? 'var(--ds)' : '', fn: () => m.set({ autoThreshold: !p.autoThreshold }) },
+    { label: 'Автоуровень', checked: p.autoLevel, color: p.autoLevel ? 'var(--ds)' : '', fn: () => m.set({ autoLevel: !p.autoLevel }) },
+    '-',
+    { label: 'Открыть все параметры', fn: () => dsSheet.set('full') },
+    { label: 'Сбросить частоту и порог', fn: () => m.reset(['frequency', 'threshold']) }
+  ], r.left - 170, r.top - 330);
+  haptics.tick();
+});
+
+/* ---------------- нижняя панель эквалайзера / EQ bar ---------------- */
 const outKnob = new Knob('output', {
   onBegin: () => currentModel()?.begin(),
-  onChange: (v) => currentModel()?.setSetting('outputGain', Math.round(v * 10) / 10),
+  onChange: (v) => { const m = currentModel(); if (isEq(m)) m.setSetting('outputGain', Math.round(v * 10) / 10); },
   onEnd: () => currentModel()?.commit(),
   getDefault: () => 0
 });
@@ -326,8 +380,8 @@ $('#outKnob').appendChild(outKnob.root);
 
 function syncEqBar() {
   const m = currentModel();
-  const s = m?.settings;
-  $('#eqBar').classList.toggle('is-disabled', !m);
+  const s = isEq(m) ? m.settings : null;
+  $('#eqBar').classList.toggle('is-disabled', !s);
   for (const b of document.querySelectorAll('.seg-mode [data-mode]')) {
     const on = s && b.dataset.mode === s.mode;
     b.classList.toggle('is-on', !!on);
@@ -339,17 +393,17 @@ function syncEqBar() {
   setT('#tglGrab', s?.grab);
   setT('#tglAnalyzer', graph.analyzer.pre || graph.analyzer.post);
   outKnob.set(s ? s.outputGain : 0);
-  outKnob.labelEl.textContent = s?.autoGain ? `Out (auto ${fmtGain(currentSlot().plugin.autoGainDb)})` : 'Output';
+  outKnob.labelEl.textContent = s?.autoGain ? `Выход (авто ${fmtGain(currentSlot().plugin.autoGainDb)})` : 'Выход';
 }
 
 $('#eqBar').addEventListener('click', (e) => {
   const m = currentModel();
-  if (!m) return;
+  if (!isEq(m)) return;
   const mode = e.target.closest('[data-mode]');
   if (mode) {
     m.setSetting('mode', mode.dataset.mode, { history: true });
     haptics.tick();
-    if (mode.dataset.mode === 'linear') toast.show('Linear Phase: добавляет задержку · adds latency', { short: true });
+    if (mode.dataset.mode === 'linear') toast.show('Линейная фаза добавляет задержку', { short: true });
   }
   const t = e.target.closest('.tgl');
   if (!t) return;
@@ -395,14 +449,16 @@ document.addEventListener('fullscreenchange', () => root.classList.toggle('is-fu
 document.addEventListener('webkitfullscreenchange', () => root.classList.toggle('is-fullscreen', fullscreen.active));
 
 /* ---------------- навигация (мобильные) / navigation (mobile) ---------------- */
+function resizeGraphs() {
+  requestAnimationFrame(() => { graph.resize(); dsGraph.resize(); });
+}
 function setView(v) {
   $('#app').dataset.view = v;
   for (const b of document.querySelectorAll('.bottom-nav [data-view]')) {
     if (b.dataset.view === v) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
   }
   if (v === 'presets') refreshPresets();
-  // График мог быть скрыт — пересчитать размеры / graph may have been hidden — re-measure
-  if (v === 'eq') requestAnimationFrame(() => graph.resize());
+  if (v === 'eq') resizeGraphs(); // график мог быть скрыт / the graph may have been hidden
 }
 document.querySelector('.bottom-nav').addEventListener('click', (e) => {
   const b = e.target.closest('button');
@@ -416,36 +472,37 @@ $('#btnPresetsClose').addEventListener('click', () => setView('eq'));
 
 watchOrientation((o) => {
   root.dataset.orient = o;
-  // Смена ориентации: панель → сбоку (landscape) или снизу (portrait)
-  requestAnimationFrame(() => graph.resize());
+  // Поворот: панель переезжает вниз (портрет) или вбок (альбом) — пересчитать графики
+  resizeGraphs();
 });
 
 /* ---------------- транспорт / transport ---------------- */
 const btnMic = $('#btnMic');
 if (!micSupported) {
   btnMic.disabled = true;
-  btnMic.title = 'Микрофон требует HTTPS / Microphone needs HTTPS';
+  btnMic.title = 'Для микрофона нужен HTTPS';
 }
+const micError = (e) => (e.name === 'NotAllowedError' ? 'Доступ к микрофону запрещён'
+  : e.name === 'NotFoundError' ? 'Микрофон не найден' : e.message);
+
 btnMic.addEventListener('click', async () => {
   if (!engine) return;
   if (engine.mic) { engine.disableMic(); return; }
   try {
     await engine.enableMic($('#selInput').value || undefined);
     haptics.select();
-    if (!engine.monitor) toast.show('Микрофон включён. Мониторинг — только в наушниках! · Use headphones for monitoring');
+    if (!engine.monitor) toast.show('Микрофон включён. Для мониторинга используйте наушники!');
     await fillInputs();
   } catch (e) {
-    const msg = e.name === 'NotAllowedError' ? 'Доступ к микрофону запрещён · Mic permission denied'
-      : e.name === 'NotFoundError' ? 'Микрофон не найден · No microphone found' : e.message;
-    toast.show(msg);
+    toast.show(micError(e));
   }
 });
-/** Список входов в двух местах: транспорт (desktop) и drawer (мобильные). Input list in both places. */
+/** Список входов в двух местах: транспорт (компьютер) и drawer (телефон). */
 async function fillInputs() {
   const inputs = await engine.listInputs();
   if (inputs.length < 2) return;
   const cur = engine.mic?.stream.getAudioTracks()[0]?.getSettings?.().deviceId;
-  const html = inputs.map((d, i) => `<option value="${d.deviceId}">${(d.label || 'Input ' + (i + 1)).replace(/</g, '&lt;')}</option>`).join('');
+  const html = inputs.map((d, i) => `<option value="${d.deviceId}">${(d.label || 'Вход ' + (i + 1)).replace(/</g, '&lt;')}</option>`).join('');
   for (const sel of [$('#selInput'), $('#optInput')]) {
     sel.innerHTML = html;
     if (cur) sel.value = cur;
@@ -456,7 +513,7 @@ for (const id of ['#selInput', '#optInput']) {
   $(id).addEventListener('change', async (e) => {
     $('#selInput').value = $('#optInput').value = e.target.value;
     if (!engine?.mic) return;
-    try { await engine.enableMic(e.target.value); } catch (err) { toast.show(err.message); }
+    try { await engine.enableMic(e.target.value); } catch (err) { toast.show(micError(err)); }
   });
 }
 
@@ -466,9 +523,9 @@ $('#btnRec').addEventListener('click', async () => {
   if (!recorder) return;
   if (recorder.recording) { recorder.stop(); haptics.select(); return; }
   if (!engine.mic && !engine.player) {
-    // Нет источника → включаем микрофон автоматически / no source → enable mic automatically
+    // Нет источника → включаем микрофон автоматически
     try { await engine.enableMic($('#selInput').value || undefined); }
-    catch (e) { toast.show(e.name === 'NotAllowedError' ? 'Доступ к микрофону запрещён · Mic permission denied' : e.message); return; }
+    catch (e) { toast.show(micError(e)); return; }
   }
   await recorder.start();
   haptics.heavy();
@@ -500,14 +557,14 @@ $('#selTap').addEventListener('change', (e) => { prefs.tap = e.target.value; sav
 $('#chkLoop').checked = prefs.loop;
 $('#chkLoop').addEventListener('change', (e) => { prefs.loop = e.target.checked; savePrefs(prefs); });
 
-/* ---------------- дубли / takes ---------------- */
+/* ---------------- записи / takes ---------------- */
 const fmtDur = (s) => `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, '0')}`;
 
 function renderTakes() {
   if (!recorder) return;
   const ul = $('#takeList');
   if (!recorder.takes.length) {
-    ul.innerHTML = '<li class="empty">Нет записей. Нажмите ● для записи с микрофона. No takes yet.</li>';
+    ul.innerHTML = '<li class="empty">Записей пока нет. Нажмите ●, чтобы записать звук с микрофона.</li>';
     return;
   }
   ul.innerHTML = '';
@@ -517,16 +574,16 @@ function renderTakes() {
     li.className = 'take' + (playing ? ' is-playing' : '');
     li.dataset.id = t.id;
     li.innerHTML = `
-      <button class="icon-btn take-play" data-act="play" aria-label="${playing ? 'Стоп / Stop' : 'Играть через FX / Play through FX'}">
+      <button class="icon-btn take-play" data-act="play" aria-label="${playing ? 'Стоп' : 'Воспроизвести через эффекты'}">
         ${playing ? '<svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1.5"/></svg>' : '<svg viewBox="0 0 24 24"><path d="M7 5l12 7-12 7z"/></svg>'}
       </button>
       <div class="take-info">
-        <button class="take-name" data-act="rename"></button>
-        <span class="take-meta mono">${fmtDur(t.duration)} · ${t.wet ? 'wet' : 'dry'} · ${(t.sampleRate / 1000).toFixed(1)} kHz</span>
+        <button class="take-name" data-act="rename" title="Переименовать"></button>
+        <span class="take-meta mono">${fmtDur(t.duration)} · ${t.wet ? 'с эффектами' : 'без эффектов'} · ${(t.sampleRate / 1000).toFixed(1)} кГц</span>
       </div>
-      <button class="icon-btn" data-act="bounce" aria-label="Обработать через FX / Render through FX" title="Render FX"><svg viewBox="0 0 24 24"><path d="M4 12h10M10 6l6 6-6 6M20 5v14"/></svg></button>
-      <button class="icon-btn" data-act="download" aria-label="Скачать WAV / Download WAV"><svg viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg></button>
-      <button class="icon-btn" data-act="delete" aria-label="Удалить / Delete"><svg viewBox="0 0 24 24"><path d="M5 7h14M10 7V4h4v3M7 7l1 13h8l1-13"/></svg></button>`;
+      <button class="icon-btn" data-act="bounce" aria-label="Обработать эффектами" title="Обработать эффектами"><svg viewBox="0 0 24 24"><path d="M4 12h10M10 6l6 6-6 6M20 5v14"/></svg></button>
+      <button class="icon-btn" data-act="download" aria-label="Скачать WAV" title="Скачать WAV"><svg viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg></button>
+      <button class="icon-btn" data-act="delete" aria-label="Удалить" title="Удалить"><svg viewBox="0 0 24 24"><path d="M5 7h14M10 7V4h4v3M7 7l1 13h8l1-13"/></svg></button>`;
     li.querySelector('.take-name').textContent = t.name;
     ul.appendChild(li);
   }
@@ -543,23 +600,22 @@ $('#takeList').addEventListener('click', async (e) => {
     await engine.resume();
     if (engine.player?.takeId === t.id) { engine.stop(); return; }
     engine.play(recorder.toBuffer(t), { loop: prefs.loop, takeId: t.id });
-    // Чтобы слышать воспроизведение, включаем мониторинг / enable monitoring to hear playback
+    // Чтобы слышать воспроизведение, включаем мониторинг
     if (!engine.monitor) engine.setMonitor(true);
-    if (t.wet) toast.show('Дубль уже с FX — эффекты применятся повторно · Take is already wet', { short: true });
+    if (t.wet) toast.show('Запись уже с эффектами — они применятся повторно', { short: true });
   }
   if (act === 'download') downloadBlob(recorder.wav(t), `${t.name.replace(/[^\w\-а-яё ]+/gi, '_')}.wav`);
   if (act === 'delete') { if (engine.player?.takeId === t.id) engine.stop(); recorder.remove(t.id); }
   if (act === 'rename') {
-    const n = prompt('Имя дубля / Take name', t.name);
+    const n = prompt('Название записи', t.name);
     if (n) recorder.rename(t.id, n);
   }
   if (act === 'bounce') {
     b.disabled = true;
-    toast.show('Рендер через FX… · Rendering…', { short: true });
+    toast.show('Обработка эффектами…', { short: true });
     try {
-      const P = (id) => (id === 'proeq' ? ProEQPlugin : null);
-      await recorder.bounce(t, engine.chain.toJSON(), P);
-      toast.show('Готово: новый дубль с FX · Rendered');
+      await recorder.bounce(t, engine.chain.toJSON(), getPlugin);
+      toast.show('Готово: добавлена запись с эффектами');
     } catch (err) { toast.show(err.message); }
     b.disabled = false;
   }
@@ -572,7 +628,7 @@ $('#fileImport').addEventListener('change', async (e) => {
   try {
     const t = await recorder.importFile(f);
     toast.show(`Импортировано: ${t.name}`, { short: true });
-  } catch (err) { toast.show('Не удалось декодировать файл · Decode failed'); console.error(err); }
+  } catch (err) { toast.show('Не удалось прочитать аудиофайл'); console.error(err); }
 });
 
 /* ---------------- цикл UI: метры и таймер / UI loop: meters & timer ---------------- */
@@ -593,17 +649,33 @@ function uiLoop() {
   }
   if (recorder?.recording) recTime.textContent = fmtDur(recorder.elapsed).padStart(7, '0');
   else if (engine.player) recTime.textContent = fmtDur(engine.playPosition).padStart(7, '0');
+  if (currentEditor() === 'deesser') dsPanel.tick();
 }
 
 /* ---------------- пресеты / presets ---------------- */
+const CAT_LABELS = {
+  Custom: 'Свои', User: 'Свои', Vocal: 'Вокал', Voice: 'Голос', Podcast: 'Подкаст', Rap: 'Рэп', Pop: 'Поп', Rock: 'Рок',
+  Mix: 'Сведение', Master: 'Мастеринг', Instrument: 'Инструменты', Repair: 'Реставрация', FX: 'Эффекты'
+};
+const CATEGORIES = {
+  eq: ['Custom', 'Vocal', 'Podcast', 'Mix', 'Master', 'Instrument', 'Repair', 'FX'],
+  deesser: ['Custom', 'Vocal', 'Podcast', 'Rap', 'Pop', 'Rock']
+};
+/** Тип пресетов для текущего эффекта: 'eq' | 'deesser'. */
+const presetKind = () => (currentEditor() === 'deesser' ? 'deesser' : 'eq');
+
 async function refreshPresets() {
   const box = $('#presetList');
-  box.innerHTML = '<p class="panel-note">Загрузка… · Loading…</p>';
+  const kind = presetKind();
+  $('#presetsFor').textContent = `Для эффекта: ${currentSlot()?.name || '—'}`;
+  const cat = $('#presetCategory');
+  cat.innerHTML = CATEGORIES[kind].map((c) => `<option value="${c}">${CAT_LABELS[c]}</option>`).join('');
+  box.innerHTML = '<p class="panel-note">Загрузка…</p>';
   let list = [];
-  try { list = await presets.list(); } catch (e) { box.innerHTML = `<p class="panel-note">${e.message}</p>`; return; }
-  $('#srvStatus').textContent = presets.online ? '● server' : '○ offline';
+  try { list = await presets.list(kind); } catch (e) { box.innerHTML = `<p class="panel-note">${e.message}</p>`; return; }
+  $('#srvStatus').textContent = presets.online ? '● сервер' : '○ офлайн';
   $('#srvStatus').classList.toggle('is-online', presets.online);
-  const groups = [['Factory', list.filter((p) => p.factory)], ['User', list.filter((p) => !p.factory)]];
+  const groups = [['Заводские', list.filter((p) => p.factory)], ['Мои', list.filter((p) => !p.factory)]];
   box.innerHTML = '';
   for (const [title, items] of groups) {
     const h = document.createElement('h3');
@@ -615,10 +687,10 @@ async function refreshPresets() {
       row.className = 'preset-row';
       row.dataset.id = p.id;
       row.innerHTML = `<button class="preset-load" data-act="load"><b></b><small></small></button>
-        <button class="icon-btn" data-act="export" aria-label="Экспорт / Export"><svg viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg></button>
-        ${p.factory ? '' : '<button class="icon-btn" data-act="delete" aria-label="Удалить / Delete"><svg viewBox="0 0 24 24"><path d="M5 7h14M10 7V4h4v3M7 7l1 13h8l1-13"/></svg></button>'}`;
+        <button class="icon-btn" data-act="export" aria-label="Экспорт" title="Экспорт"><svg viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg></button>
+        ${p.factory ? '' : '<button class="icon-btn" data-act="delete" aria-label="Удалить" title="Удалить"><svg viewBox="0 0 24 24"><path d="M5 7h14M10 7V4h4v3M7 7l1 13h8l1-13"/></svg></button>'}`;
       row.querySelector('b').textContent = p.name;
-      row.querySelector('small').textContent = [p.category, p.author, p.local ? 'local' : ''].filter(Boolean).join(' · ');
+      row.querySelector('small').textContent = [CAT_LABELS[p.category] || p.category, p.author === 'Factory' ? 'Movexe' : p.author, p.local ? 'на устройстве' : ''].filter(Boolean).join(' · ');
       box.appendChild(row);
     }
   }
@@ -631,10 +703,10 @@ $('#presetList').addEventListener('click', async (e) => {
   const id = row.dataset.id;
   try {
     if (b.dataset.act === 'load') {
-      const p = await presets.get(id);
+      const p = await presets.get(id, presetKind());
       const m = currentModel();
-      if (!m) { toast.show('Нет EQ в цепочке · No EQ in chain'); return; }
-      m.loadJSON(p.eq);
+      if (!m) { toast.show('В цепочке нет эффекта'); return; }
+      if (isEq(m)) m.loadJSON(p.eq); else m.loadJSON(p);
       presetName = p.name;
       $('#presetName').textContent = presetName;
       $('#presetNameInput').value = p.factory ? '' : p.name;
@@ -643,34 +715,41 @@ $('#presetList').addEventListener('click', async (e) => {
       scheduleSave();
       if (matchMedia('(max-width: 1023px)').matches) setView('eq');
     } else if (b.dataset.act === 'export') {
-      presets.exportFile(await presets.get(id));
+      presets.exportFile(await presets.get(id, presetKind()));
     } else if (b.dataset.act === 'delete') {
-      if (!confirm('Удалить пресет? / Delete preset?')) return;
+      if (!confirm('Удалить пресет?')) return;
       await presets.remove(id);
       refreshPresets();
     }
   } catch (err) { toast.show(err.message); }
 });
 
+/** Текущее состояние эффекта в формате пресета / current effect state as a preset. */
+function currentPreset(name, category) {
+  const m = currentModel();
+  if (!m) return null;
+  if (isEq(m)) return { name, author: 'User', category, plugin: 'eq', version: 1, eq: m.toJSON() };
+  return { name, author: 'User', category, plugin: 'deesser', version: 1, ...m.toJSON() };
+}
+
 $('#presetSave').addEventListener('submit', async (e) => {
   e.preventDefault();
-  const m = currentModel();
-  if (!m) return;
   const name = $('#presetNameInput').value.trim();
-  if (!name) return;
+  const preset = currentPreset(name, $('#presetCategory').value);
+  if (!name || !preset) return;
   try {
-    const saved = await presets.save({ name, author: 'User', category: 'User', eq: m.toJSON() });
+    const saved = await presets.save(preset);
     presetName = saved.name;
     $('#presetName').textContent = presetName;
-    toast.show(`Сохранено${presets.online ? '' : ' локально'} · Saved`, { short: true });
+    toast.show(presets.online ? 'Пресет сохранён' : 'Пресет сохранён на устройстве', { short: true });
     scheduleSave();
     refreshPresets();
   } catch (err) { toast.show(err.message); }
 });
 
 $('#btnExportCur').addEventListener('click', () => {
-  const m = currentModel();
-  if (m) presets.exportFile({ name: $('#presetNameInput').value.trim() || presetName, version: 1, eq: m.toJSON() });
+  const p = currentPreset($('#presetNameInput').value.trim() || presetName, $('#presetCategory').value || 'Custom');
+  if (p) presets.exportFile(p);
 });
 
 $('#presetImport').addEventListener('change', async (e) => {
@@ -678,7 +757,7 @@ $('#presetImport').addEventListener('change', async (e) => {
   e.target.value = '';
   if (!f) return;
   try {
-    const p = await presets.importFile(f);
+    const p = await presets.importFile(f, presetKind());
     toast.show(`Импортирован: ${p.name}`, { short: true });
     refreshPresets();
   } catch (err) { toast.show(err.message); }
@@ -693,38 +772,45 @@ function bindOpt(id, get, set) {
 bindOpt('#optPre', () => graph.analyzer.pre, (v) => { graph.analyzer.pre = v; prefs.analyzer = { ...graph.analyzer }; syncEqBar(); });
 bindOpt('#optPost', () => graph.analyzer.post, (v) => { graph.analyzer.post = v; prefs.analyzer = { ...graph.analyzer }; graph.dirty.grid = true; syncEqBar(); });
 bindOpt('#optSpeed', () => graph.analyzer.speed, (v) => { graph.analyzer.speed = v; prefs.analyzer = { ...graph.analyzer }; });
-bindOpt('#optTilt', () => graph.analyzer.tilt, (v) => { graph.analyzer.tilt = Number(v); prefs.analyzer = { ...graph.analyzer }; });
+bindOpt('#optTilt', () => graph.analyzer.tilt, (v) => {
+  graph.analyzer.tilt = Number(v); prefs.analyzer = { ...graph.analyzer };
+  dsGraph.specIn.tilt = dsGraph.specOut.tilt = Number(v);
+});
 bindOpt('#optFft', () => prefs.fftSize, (v) => {
   prefs.fftSize = Number(v);
   engine?.chain.slots.forEach((s) => s.plugin.setFftSize?.(prefs.fftSize));
 });
 bindOpt('#optMaxBands', () => prefs.maxBands, (v) => {
   prefs.maxBands = Number(v);
-  engine?.chain.slots.forEach((s) => s.plugin.model?.setMaxBands(Math.max(prefs.maxBands, s.plugin.model.bands.length)));
+  engine?.chain.slots.forEach((s) => { const m = s.plugin.model; if (isEq(m)) m.setMaxBands(Math.max(prefs.maxBands, m.bands.length)); });
 });
 bindOpt('#optLinQ', () => prefs.linearQuality, (v) => {
   prefs.linearQuality = v;
-  engine?.chain.slots.forEach((s) => { const m = s.plugin.model; if (m) { m.settings.linearQuality = v; if (m.settings.mode === 'linear') s.plugin._scheduleFir(0); } });
+  engine?.chain.slots.forEach((s) => { const m = s.plugin.model; if (isEq(m)) { m.settings.linearQuality = v; if (m.settings.mode === 'linear') s.plugin._scheduleFir(0); } });
 });
-bindOpt('#optControls', () => prefs.controls, (v) => { prefs.controls = v; panel.setControlStyle(v); });
-bindOpt('#optTheme', () => prefs.theme, (v) => { prefs.theme = v; applyTheme(); requestAnimationFrame(() => graph.refreshTheme()); });
+bindOpt('#optControls', () => prefs.controls, (v) => { prefs.controls = v; panel.setControlStyle(v); dsPanel.setControlStyle(v); });
+bindOpt('#optTheme', () => prefs.theme, (v) => {
+  prefs.theme = v; applyTheme();
+  requestAnimationFrame(() => { graph.refreshTheme(); dsGraph.refreshTheme(); });
+});
 bindOpt('#optHaptics', () => prefs.haptics, (v) => { prefs.haptics = v; haptics.enabled = v; haptics.select(); });
 bindOpt('#optLowPower', () => prefs.lowPower, (v) => {
   prefs.lowPower = v;
   root.classList.toggle('low-power', v);
-  graph.lowPower = v;
-  graph.resize();
+  graph.lowPower = dsGraph.lowPower = v;
+  resizeGraphs();
 });
 $('#optHaptics').closest('label').hidden = !dev.vibrate;
 $('#btnResetAll').addEventListener('click', () => {
   const m = currentModel();
-  if (!m || !m.bands.length) return;
-  m.resetAll();
+  if (!m) return;
+  if (isEq(m)) { if (!m.bands.length) return; m.resetAll(); }
+  else { const { audition, bypass, ...rest } = m.params; void audition; void bypass; m.reset(Object.keys(rest)); }
   drawer.close();
-  toast.show('Все полосы сброшены · All bands reset', { action: { label: 'Undo', fn: () => m.undo() } });
+  toast.show('Эффект сброшен', { action: { label: 'Отменить', fn: () => m.undo() } });
 });
-$('#deviceInfo').textContent = `CPU: ${navigator.hardwareConcurrency || '?'} · ${dev.lowPower ? 'low-power' : 'normal'} · ${dev.coarse ? 'touch' : 'mouse'}` +
-  (engine ? ` · ${engine.sampleRate} Hz` : '');
+$('#deviceInfo').textContent = `Ядер CPU: ${navigator.hardwareConcurrency || '?'} · ${dev.lowPower ? 'экономный режим' : 'обычный режим'} · ${dev.coarse ? 'сенсор' : 'мышь'}` +
+  (engine ? ` · ${engine.sampleRate} Гц` : '');
 
 /* ---------------- клавиатура / keyboard ---------------- */
 document.addEventListener('keydown', (e) => {
@@ -733,13 +819,20 @@ document.addEventListener('keydown', (e) => {
   const m = currentModel();
   if (!m) return;
   const mod = e.ctrlKey || e.metaKey;
-  const sel = m.selected;
   if (mod && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? m.redo() : m.undo(); return; }
   if (mod && e.key.toLowerCase() === 'y') { e.preventDefault(); m.redo(); return; }
-  if (mod && e.key.toLowerCase() === 'c' && sel) { m.copyBand(sel.id); toast.show('Copied', { short: true }); return; }
+  if (e.key === 'Escape') { ctxMenu.hide(); drawer.close(); }
+  if (!isEq(m)) {
+    // Де-эссер: B — обход, A — прослушивание / de-esser: B bypass, A audition
+    if (e.key === 'b' || e.key === 'B') m.set({ bypass: !m.params.bypass }, { history: false });
+    if (e.key === 'a' || e.key === 'A') m.set({ audition: !m.params.audition }, { history: false });
+    return;
+  }
+  const sel = m.selected;
+  if (mod && e.key.toLowerCase() === 'c' && sel) { m.copyBand(sel.id); toast.show('Скопировано', { short: true }); return; }
   if (mod && e.key.toLowerCase() === 'v') { m.pasteBand(); return; }
   if ((e.key === 'Delete' || e.key === 'Backspace') && sel && !e.target.closest('.ctl')) { e.preventDefault(); m.removeBand(sel.id); return; }
-  if (e.key === 'Escape') { m.select(null); ctxMenu.hide(); drawer.close(); return; }
+  if (e.key === 'Escape') { m.select(null); return; }
   if (e.key === 'Tab' && m.bands.length && e.target === document.body) {
     e.preventDefault();
     const sorted = [...m.bands].sort((a, b) => a.freq - b.freq);
@@ -774,19 +867,19 @@ $('#btnInstall').addEventListener('click', async () => {
 });
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('sw.js').catch((e) => console.warn('[sw] register failed', e));
+    navigator.serviceWorker.register('sw.js').catch((e) => console.warn('[sw] не удалось зарегистрировать', e));
   });
 }
 
 /* ---------------- старт / start ---------------- */
 sheet.addEventListener('state', () => panel.render());
-sheet.addEventListener('dismiss', () => currentModel()?.select(null));
+sheet.addEventListener('dismiss', () => { const m = currentModel(); if (isEq(m)) m.select(null); });
+dsSheet.addEventListener('state', () => dsPanel.render());
 restoreSession();
 recorder?.load();
 syncTransport();
-graph.start();
 uiLoop();
 if (location.protocol === 'file:') toast.show('Откройте через http(s):// — ES-модули и микрофон не работают с file://');
 
 // Для отладки из консоли / for console debugging
-window.proeq = { engine, graph, recorder, presets, get model() { return currentModel(); } };
+window.proeq = { engine, graph, dsGraph, recorder, presets, get model() { return currentModel(); } };

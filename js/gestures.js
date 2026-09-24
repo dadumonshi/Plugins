@@ -19,6 +19,8 @@ import { PointerGestures, haptics } from './touch.js';
 import { GAINLESS, FILTER_LABELS, clamp } from './dsp.js';
 import { nodeGainFactor } from './ui.js';
 import { autoTypeFor, BAND_COLORS } from './eq.js';
+import { DS_DEFAULTS, DS_PARAMS } from './detection.js';
+import { fmtHz, fmtDb } from './graph.js';
 
 export class GraphGestures {
   /**
@@ -117,7 +119,7 @@ export class GraphGestures {
       this.model.resetBand(b.id);
       haptics.select();
       this.g.ripple(p.x, p.y, BAND_COLORS[b.color]);
-      this.hooks.toast(`Полоса ${this.model.bands.indexOf(b) + 1} сброшена · Band reset`);
+      this.hooks.toast(`Полоса ${this.model.bands.indexOf(b) + 1} сброшена`);
       return;
     }
     const freq = this.g.xToFreq(p.x);
@@ -129,7 +131,7 @@ export class GraphGestures {
       this.g.ripple(p.x, p.y, BAND_COLORS[nb.color]);
       this.hooks.openSheet(nb);
     } else {
-      this.hooks.toast(`Лимит полос: ${this.model.maxBands} · Band limit reached`, { action: { label: 'Настройки', fn: () => this.hooks.openDrawer?.() } });
+      this.hooks.toast(`Достигнут лимит полос: ${this.model.maxBands}`, { action: { label: 'Настройки', fn: () => this.hooks.openDrawer?.() } });
     }
   }
 
@@ -142,7 +144,7 @@ export class GraphGestures {
       this.model.removeBand(b.id);
       this.g.dragId = null;
       this.hooks.closeSheet?.();
-      this.hooks.toast(`Полоса ${idx} удалена · Band deleted`, { action: { label: 'Undo', fn: () => this.model.undo() } });
+      this.hooks.toast(`Полоса ${idx} удалена`, { action: { label: 'Отменить', fn: () => this.model.undo() } });
       this.target = null;
       return;
     }
@@ -286,7 +288,7 @@ export class GraphGestures {
         this.model.resetAll();
         haptics.heavy();
         this.hooks.closeSheet?.();
-        this.hooks.toast('Все полосы сброшены · All bands reset', { action: { label: 'Undo', fn: () => this.model.undo() } });
+        this.hooks.toast('Все полосы сброшены', { action: { label: 'Отменить', fn: () => this.model.undo() } });
       }
       return;
     }
@@ -347,3 +349,181 @@ export class GraphGestures {
   }
 }
 
+
+/* ======================================================================
+ * Жесты Movexe DeEss / Movexe DeEss gestures
+ *
+ *  1 палец по узлу ........ частота (→) и порог (↕)
+ *  2 пальца вертикально ... порог
+ *  2 пальца горизонтально . частота
+ *  long press (500 мс) .... узел — сброс частоты и порога; пусто — сброс выбранного параметра
+ *  double tap ............. обход вкл/выкл
+ *  tap .................... выбор параметра + открытие панели
+ *  колесо (desktop) ....... порог; Shift+колесо — частота
+ * ====================================================================== */
+export class DeEssGestures {
+  /**
+   * @param {import('./graph.js').DeEssGraph} graph
+   * @param {object} hooks { openSheet(), toast(msg, o), unlock() }
+   */
+  constructor(graph, hooks) {
+    this.g = graph;
+    this.hooks = hooks;
+    this.onNode = false;
+    this.start = null;
+    this.multi = null;
+    this.pg = new PointerGestures(graph.svg, {
+      down: (p) => this._down(p),
+      up: () => this._up(),
+      tap: (p) => this._tap(p),
+      doubleTap: (p) => this._doubleTap(p),
+      longPress: (p) => this._longPress(p),
+      dragStart: (i) => this._dragStart(i),
+      dragMove: (i) => this._dragMove(i),
+      dragEnd: (i, o) => this._dragEnd(i, o),
+      multiStart: (i) => this._multiStart(i),
+      multiMove: (i) => this._multiMove(i),
+      multiEnd: () => this._multiEnd(),
+      hover: (p) => this._hover(p),
+      hoverEnd: () => { this.g.hover = false; this.g.showTip(null); }
+    });
+    graph.svg.addEventListener('wheel', (e) => this._wheel(e), { passive: false });
+  }
+
+  get model() { return this.g.model; }
+
+  _tipFor(x, y, ms = 0) {
+    const p = this.model.params;
+    this.g.showTip(`<b style="color:var(--ds)">Детекция</b><br>${fmtHz(p.frequency)}<br>Порог ${fmtDb(p.threshold)}`, x, y, ms);
+  }
+
+  _down(p) {
+    this.hooks.unlock?.();
+    if (!this.model) return;
+    this.onNode = this.g.hitNode(p.x, p.y, p.type);
+    if (this.onNode) { this.g.dragging = true; haptics.select(); }
+  }
+
+  _up() { this.g.dragging = false; this.g.hideLoupe(); }
+
+  _tap(p) {
+    if (!this.model) return;
+    let key = null;
+    if (this.onNode) key = 'frequency';
+    else if (this.g.hitThreshold(p.x, p.y)) key = 'threshold';
+    if (key) this.model.select(key);
+    this.g.ripple(p.x, p.y);
+    this.hooks.openSheet();
+    // Подсказка по касанию (на touch нет hover) / tooltip on touch (no hover)
+    if (p.type !== 'mouse') { const n = this.g.nodePos(); this._tipFor(n.x, n.y, 1500); }
+  }
+
+  _doubleTap(p) {
+    if (!this.model) return;
+    const on = !this.model.params.bypass;
+    this.model.set({ bypass: on }, { history: false });
+    haptics.heavy();
+    this.g.ripple(p.x, p.y);
+    this.hooks.toast(on ? 'Обход включён' : 'Обход выключен', { short: true });
+  }
+
+  _longPress(p) {
+    if (!this.model) return;
+    haptics.heavy();
+    if (this.onNode) {
+      this.model.reset(['frequency', 'threshold']);
+      this.hooks.toast('Частота и порог сброшены', { action: { label: 'Отменить', fn: () => this.model.undo() } });
+    } else {
+      const k = this.model.selected;
+      if (!(k in DS_DEFAULTS)) return;
+      this.model.reset([k]);
+      this.hooks.toast(`«${DS_PARAMS[k]?.label || k}» сброшен`, { action: { label: 'Отменить', fn: () => this.model.undo() } });
+    }
+    this.g.dragging = false;
+  }
+
+  _dragStart() {
+    if (!this.onNode || !this.model) return;
+    const pos = this.g.nodePos();
+    this.model.begin();
+    this.start = { x: pos.x, y: pos.y };
+    this.g.showTip(null);
+  }
+
+  _dragMove(i) {
+    if (!this.start) return;
+    const fine = i.cur.shift ? 0.15 : 1;
+    const patch = { frequency: clamp(this.g.xToFreq(this.start.x + i.dx * fine), 1000, 20000) };
+    // При автопороге узел по вертикали не двигается / with auto threshold only frequency moves
+    if (!this.model.params.autoThreshold) patch.threshold = clamp(this.g.yToSpec(this.start.y + i.dy * fine), -60, 0);
+    this.model.set(patch);
+    const n = this.g.nodePos();
+    const p = this.model.params;
+    const text = `${fmtHz(p.frequency)} · ${fmtDb(p.threshold)}`;
+    if (i.type === 'mouse') this._tipFor(n.x, n.y);
+    else this.g.showLoupe(n.x, n.y, text);
+  }
+
+  _dragEnd() {
+    this.g.hideLoupe();
+    if (!this.start) return;
+    this.start = null;
+    this.model.commit();
+  }
+
+  _multiStart() {
+    if (!this.model) return;
+    this.g.hideLoupe();
+    if (this.start) this.start = null;
+    this.model.begin();
+    this.multi = { f0: this.model.params.frequency, t0: this.model.params.threshold, axis: null };
+  }
+
+  _multiMove(i) {
+    const m = this.multi;
+    if (!m || i.count > 2) return;
+    // Ось выбирается по первому заметному движению — без случайных смещений второй оси.
+    // The axis locks on the first clear movement — no accidental drift on the other one.
+    if (!m.axis && Math.hypot(i.dx, i.dy) > 12) m.axis = Math.abs(i.dy) > Math.abs(i.dx) ? 'y' : 'x';
+    if (m.axis === 'y' && !this.model.params.autoThreshold) {
+      const dDb = (-i.dy / (this.g.h - this.g.padTop - this.g.padBottom)) * 90;
+      this.model.set({ threshold: clamp(m.t0 + dDb * 0.6, -60, 0) });
+      this.model.select('threshold');
+    } else if (m.axis === 'x') {
+      const oct = (i.dx / this.g.w) * Math.log2(1000) * 0.8;
+      this.model.set({ frequency: clamp(m.f0 * Math.pow(2, oct), 1000, 20000) });
+      this.model.select('frequency');
+    }
+    const n = this.g.nodePos();
+    this._tipFor(n.x, n.y);
+  }
+
+  _multiEnd() {
+    if (!this.multi) return;
+    this.multi = null;
+    this.model.commit();
+    haptics.tick();
+    this.g.showTip(null);
+  }
+
+  _hover(p) {
+    if (!this.model) return;
+    const on = this.g.hitNode(p.x, p.y, 'mouse');
+    this.g.svg.style.cursor = on ? 'grab' : this.g.hitThreshold(p.x, p.y) ? 'ns-resize' : 'default';
+    if (on !== this.g.hover) {
+      this.g.hover = on;
+      if (on) { const n = this.g.nodePos(); this._tipFor(n.x, n.y); } else this.g.showTip(null);
+    }
+  }
+
+  _wheel(e) {
+    if (!this.model) return;
+    e.preventDefault();
+    const d = clamp(-e.deltaY, -120, 120) / 120;
+    this.model.begin();
+    if (e.shiftKey) this.model.set({ frequency: clamp(this.model.params.frequency * Math.pow(2, d / 12), 1000, 20000) });
+    else if (!this.model.params.autoThreshold) this.model.set({ threshold: clamp(this.model.params.threshold + d * 0.5, -60, 0) });
+    clearTimeout(this._wt);
+    this._wt = setTimeout(() => this.model.commit(), 400);
+  }
+}

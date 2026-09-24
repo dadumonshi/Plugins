@@ -94,14 +94,85 @@ final class PresetValidator
     }
 }
 
+/**
+ * Валидатор пресетов Movexe DeEss / Movexe DeEss preset validator.
+ * Формат (плоский) / flat format:
+ * { name, category, plugin:"deesser", mode, processing, slope, filterShape, frequency, range, threshold,
+ *   knee, attack, release, lookahead, outputGain, mix, stereoLink, autoThreshold, autoLevel, channelMode }
+ */
+final class DeEssValidator
+{
+    public const CATEGORIES = ['Vocal', 'Podcast', 'Rap', 'Pop', 'Rock', 'Custom'];
+    /** Пределы числовых параметров / numeric limits: [min, max, default] */
+    public const NUM = [
+        'frequency' => [1000, 20000, 6500],
+        'range' => [0, 30, 8],
+        'threshold' => [-60, 0, -24],
+        'knee' => [0, 30, 6],
+        'attack' => [0.05, 100, 1],
+        'release' => [5, 1000, 60],
+        'lookahead' => [0, 20, 2],
+        'outputGain' => [-30, 30, 0],
+        'mix' => [0, 100, 100],
+        'stereoLink' => [0, 100, 100],
+    ];
+    public const ENUM = [
+        'mode' => ['single-vocal', 'allround'],
+        'processing' => ['split', 'wideband'],
+        'filterShape' => ['highpass', 'bandpass'],
+        'channelMode' => ['stereo', 'mid-side', 'left-right'],
+    ];
+    public const SLOPES = [6, 12, 24, 48];
+
+    public static function clean(array $in): array
+    {
+        $errors = [];
+        $name = isset($in['name']) && is_string($in['name']) ? trim($in['name']) : '';
+        if ($name === '' || mb_strlen($name) > 64) { $errors[] = 'name: required, 1–64 chars'; }
+        $cat = $in['category'] ?? 'Custom';
+        if (!in_array($cat, self::CATEGORIES, true)) { $cat = 'Custom'; }
+        $out = ['name' => $name, 'author' => mb_substr(trim(strip_tags((string)($in['author'] ?? 'User'))), 0, 40),
+            'category' => $cat, 'plugin' => 'deesser', 'version' => 1];
+        foreach (self::NUM as $k => [$min, $max, $def]) {
+            $v = $in[$k] ?? $def;
+            if (!is_numeric($v) || !is_finite((float)$v) || (float)$v < $min || (float)$v > $max) {
+                $errors[] = "$k: number in [$min, $max] required";
+                continue;
+            }
+            $out[$k] = round((float)$v, 3);
+        }
+        foreach (self::ENUM as $k => $list) {
+            $v = $in[$k] ?? $list[0];
+            if (!in_array($v, $list, true)) { $errors[] = "$k: one of " . implode('|', $list); continue; }
+            $out[$k] = $v;
+        }
+        $slope = (int)($in['slope'] ?? 24);
+        if (!in_array($slope, self::SLOPES, true)) { $errors[] = 'slope: 6|12|24|48'; }
+        $out['slope'] = $slope;
+        $out['autoThreshold'] = (bool)($in['autoThreshold'] ?? false);
+        $out['autoLevel'] = (bool)($in['autoLevel'] ?? false);
+        if ($errors) { throw new ValidationException(implode('; ', $errors)); }
+        return $out;
+    }
+}
+
+/** Тип пресета по содержимому / preset kind by content. */
+function preset_kind(array $p): string
+{
+    return ($p['plugin'] ?? '') === 'deesser' ? 'deesser' : 'eq';
+}
+
 final class PresetStorage
 {
     private string $factoryDir;
     private string $userDir;
+    /** @var array<string,string> заводские каталоги по типу / factory dirs by kind */
+    private array $factoryDirs;
 
     public function __construct(string $root)
     {
         $this->factoryDir = rtrim($root, '/');
+        $this->factoryDirs = ['eq' => $this->factoryDir, 'deesser' => $this->factoryDir . '/deesser'];
         $this->userDir = $this->factoryDir . '/user';
         if (!is_dir($this->userDir) && !@mkdir($this->userDir, 0775, true) && !is_dir($this->userDir)) {
             throw new RuntimeException('Cannot create user preset directory');
@@ -153,23 +224,25 @@ final class PresetStorage
             'author' => $p['author'] ?? '',
             'category' => $p['category'] ?? '',
             'factory' => (bool)($p['factory'] ?? false),
+            'plugin' => preset_kind($p),
             'bands' => isset($p['eq']['bands']) ? count($p['eq']['bands']) : 0,
             'updated' => $p['updated'] ?? null,
         ];
     }
 
-    /** Список (только метаданные) / list (metadata only). */
-    public function all(): array
+    /** Список (только метаданные) для типа / list (metadata only) for a kind. */
+    public function all(string $kind = 'eq'): array
     {
+        $kind = $kind === 'deesser' ? 'deesser' : 'eq';
         $out = [];
-        foreach (glob($this->factoryDir . '/*.json') ?: [] as $f) {
+        foreach (glob($this->factoryDirs[$kind] . '/*.json') ?: [] as $f) {
             if (basename($f) === 'index.json') { continue; }
             $p = $this->read($f);
-            if ($p) { $p['id'] = basename($f, '.json'); $p['factory'] = true; $out[] = $this->meta($p); }
+            if ($p) { $p['id'] = basename($f, '.json'); $p['factory'] = true; if ($kind === 'deesser') { $p['plugin'] = 'deesser'; } $out[] = $this->meta($p); }
         }
         foreach (glob($this->userDir . '/*.json') ?: [] as $f) {
             $p = $this->read($f);
-            if ($p) { $p['id'] = basename($f, '.json'); $p['factory'] = false; $out[] = $this->meta($p); }
+            if ($p && preset_kind($p) === $kind) { $p['id'] = basename($f, '.json'); $p['factory'] = false; $out[] = $this->meta($p); }
         }
         usort($out, fn($a, $b) => [$b['factory'], $a['name']] <=> [$a['factory'], $b['name']]);
         return $out;
@@ -177,20 +250,32 @@ final class PresetStorage
 
     public function get(string $id): array
     {
-        if (!self::validId($id)) { throw new NotFoundException('Preset not found'); }
-        foreach ([[$this->userDir, false], [$this->factoryDir, true]] as [$dir, $factory]) {
+        if (!self::validId($id) || $id === 'index') { throw new NotFoundException('Preset not found'); }
+        $dirs = [[$this->userDir, false, null], [$this->factoryDirs['eq'], true, 'eq'], [$this->factoryDirs['deesser'], true, 'deesser']];
+        foreach ($dirs as [$dir, $factory, $kind]) {
             $f = "$dir/$id.json";
-            if ($id !== 'index' && is_file($f)) {
+            if (is_file($f)) {
                 $p = $this->read($f);
-                if ($p) { $p['id'] = $id; $p['factory'] = $factory; return $p; }
+                if ($p) {
+                    $p['id'] = $id;
+                    $p['factory'] = $factory;
+                    if ($kind === 'deesser') { $p['plugin'] = 'deesser'; }
+                    return $p;
+                }
             }
         }
         throw new NotFoundException('Preset not found');
     }
 
+    /** Валидация по типу / validation by kind. */
+    private static function validate(array $input): array
+    {
+        return preset_kind($input) === 'deesser' ? DeEssValidator::clean($input) : PresetValidator::clean($input);
+    }
+
     public function create(array $input): array
     {
-        $p = PresetValidator::clean($input);
+        $p = self::validate($input);
         $base = trim((string)preg_replace('/[^a-z0-9]+/', '-', strtolower(self::translit($p['name']))), '-') ?: 'preset';
         $id = substr($base, 0, 40) . '-' . bin2hex(random_bytes(3));
         $now = gmdate('c');
@@ -204,7 +289,7 @@ final class PresetStorage
     {
         $cur = $this->get($id);
         if (!empty($cur['factory'])) { throw new ForbiddenException('Factory presets are read-only'); }
-        $p = PresetValidator::clean($input + ['name' => $cur['name']]);
+        $p = self::validate($input + ['name' => $cur['name'], 'plugin' => preset_kind($cur)]);
         $p['created'] = $cur['created'] ?? gmdate('c');
         $p['updated'] = gmdate('c');
         $this->write("{$this->userDir}/$id.json", $p);

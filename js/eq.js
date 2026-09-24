@@ -285,7 +285,7 @@ export class EQModel extends EventTarget {
   }
 
   loadJSON(obj, { history = true } = {}) {
-    if (!obj || !Array.isArray(obj.bands)) throw new Error('Invalid EQ preset');
+    if (!obj || !Array.isArray(obj.bands)) throw new Error('Некорректный пресет эквалайзера');
     if (history) this._record();
     const max = Math.max(this.maxBands, Math.min(obj.bands.length, 24));
     if (max > this.maxBands) this.maxBands = max; // пресет может расширить лимит / preset may raise the limit
@@ -744,8 +744,8 @@ export class ProEQPlugin {
 
 ProEQPlugin.descriptor = {
   id: 'proeq',
-  name: 'Pro EQ 3',
-  category: 'EQ',
-  description: 'Параметрический эквалайзер в стиле Pro-Q 3 / Pro-Q 3-style parametric EQ',
+  name: 'Movexe EQ 24',
+  category: 'Эквалайзер',
+  description: 'Параметрический эквалайзер на 24 полосы',
   editor: 'eq'
 };

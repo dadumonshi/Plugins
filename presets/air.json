@@ -1,5 +1,5 @@
 {
-  "name": "Air",
+  "name": "Воздух",
   "author": "Factory",
   "category": "Master",
   "version": 1,
@@ -19,5 +19,6 @@
         "enabled": true
       }
     ]
-  }
+  },
+  "plugin": "eq"
 }

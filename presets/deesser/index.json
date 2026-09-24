@@ -1,0 +1,67 @@
+{
+  "presets": [
+    {
+      "id": "vocal-bright",
+      "name": "Яркий вокал",
+      "author": "Factory",
+      "category": "Vocal",
+      "plugin": "deesser"
+    },
+    {
+      "id": "vocal-female",
+      "name": "Женский вокал",
+      "author": "Factory",
+      "category": "Vocal",
+      "plugin": "deesser"
+    },
+    {
+      "id": "vocal-male",
+      "name": "Мужской вокал",
+      "author": "Factory",
+      "category": "Vocal",
+      "plugin": "deesser"
+    },
+    {
+      "id": "podcast-voice",
+      "name": "Голос для подкаста",
+      "author": "Factory",
+      "category": "Podcast",
+      "plugin": "deesser"
+    },
+    {
+      "id": "podcast-gentle",
+      "name": "Подкаст — мягко",
+      "author": "Factory",
+      "category": "Podcast",
+      "plugin": "deesser"
+    },
+    {
+      "id": "rap-aggressive",
+      "name": "Рэп — агрессивно",
+      "author": "Factory",
+      "category": "Rap",
+      "plugin": "deesser"
+    },
+    {
+      "id": "pop-polish",
+      "name": "Поп — полировка",
+      "author": "Factory",
+      "category": "Pop",
+      "plugin": "deesser"
+    },
+    {
+      "id": "rock-vocal",
+      "name": "Рок-вокал",
+      "author": "Factory",
+      "category": "Rock",
+      "plugin": "deesser"
+    },
+    {
+      "id": "allround-bus",
+      "name": "Шина / микс",
+      "author": "Factory",
+      "category": "Pop",
+      "plugin": "deesser"
+    }
+  ]
+}

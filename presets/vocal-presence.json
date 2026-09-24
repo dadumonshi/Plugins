@@ -1,5 +1,5 @@
 {
-  "name": "Vocal Presence",
+  "name": "Присутствие вокала",
   "author": "Factory",
   "category": "Vocal",
   "version": 1,
@@ -46,5 +46,6 @@
         "enabled": true
       }
     ]
-  }
+  },
+  "plugin": "eq"
 }

@@ -74,6 +74,36 @@
 }
 .act-row { grid-area: acts; }
 
+/* Де-эссер: панель параметров под графиком (как в Pro-DS), а не поверх.
+   De-esser: parameter panel docked under the graph (Pro-DS-like), not floating. */
+.workspace { grid-template-rows: minmax(0, 1fr) auto; }
+.rack { grid-row: 1 / span 2; }
+.editor { grid-column: 2; grid-row: 1; }
+.app .ds-sheet { /* .app — специфичность выше, чем у медиа-правил .sheet ниже */
+  position: relative;
+  grid-column: 2;
+  grid-row: 2;
+  left: auto; bottom: auto; right: auto;
+  width: auto;
+  max-height: none;
+  transform: none !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  border-radius: 0;
+  border: 0;
+  border-top: 2px solid var(--ds);
+  box-shadow: none;
+}
+.ds-sheet .band-body { display: block; padding: 6px 14px 12px; }
+.ds-sheet .band-head-row { min-height: 44px; }
+.ds-sheet .ds-modes { margin-bottom: 8px; }
+.ds-knobs { display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); }
+.ds-sheet .knob { --knob: 58px; }
+.ds-sheet .ctl-value { min-width: 0; font-size: 14px; }
+.ds-sheet .act-row { margin-top: 8px; }
+.ds-sheet[data-state="hidden"] .band-body, .ds-sheet[data-state="hidden"] .band-head { visibility: visible; }
+.ds-history { height: 56px; }
+
 /* Пресеты — выезжающая справа панель / presets as a right slide-over */
 .presets-view {
   position: absolute;

@@ -16,6 +16,11 @@ export function registerPlugin(PluginClass) {
   registry.set(d.id, PluginClass);
 }
 
+/** Класс плагина по id (для офлайн-рендера) / plugin class by id (offline bounce). */
+export function getPlugin(id) {
+  return registry.get(id) || null;
+}
+
 export function listPlugins() {
   return [...registry.values()].map((P) => P.descriptor);
 }

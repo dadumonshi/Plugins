@@ -19,7 +19,7 @@ export const micSupported = !!(navigator.mediaDevices && navigator.mediaDevices.
 export class AudioEngine extends EventTarget {
   constructor({ lowPower = false, fftSize = 8192, maxBands = 24 } = {}) {
     super();
-    if (!AC) throw new Error('Web Audio API не поддерживается / not supported');
+    if (!AC) throw new Error('Этот браузер не поддерживает Web Audio API');
     // latencyHint 'interactive' — минимальная задержка для мониторинга микрофона.
     // latencyHint 'interactive' — lowest latency for mic monitoring.
     this.ctx = new AC({ latencyHint: 'interactive' });
@@ -76,7 +76,7 @@ export class AudioEngine extends EventTarget {
   /* ---------------- Микрофон / Microphone ---------------- */
 
   async enableMic(deviceId) {
-    if (!micSupported) throw new Error('Микрофон недоступен (нужен HTTPS или localhost) / Microphone requires HTTPS');
+    if (!micSupported) throw new Error('Микрофон недоступен: откройте страницу по HTTPS');
     await this.resume();
     this.disableMic();
     // iOS 16.4+: аудиосессия «запись и воспроизведение», иначе звук уходит в трубку.
